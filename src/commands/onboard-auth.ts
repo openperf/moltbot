@@ -41,7 +41,7 @@ export {
   setAnthropicApiKey,
   setDeepSeekApiKey,
   setGeminiApiKey,
-  setKimiCodeApiKey,
+  setKimiCodingApiKey,
   setMinimaxApiKey,
   setMoonshotApiKey,
   setOpencodeZenApiKey,
@@ -58,7 +58,6 @@ export {
 } from "./onboard-auth.credentials.js";
 export {
   buildDeepSeekModelDefinition,
-  buildKimiCodeModelDefinition,
   buildMinimaxApiModelDefinition,
   buildMinimaxModelDefinition,
   buildMoonshotModelDefinition,
@@ -68,9 +67,8 @@ export {
   DEEPSEEK_DEFAULT_MODEL_REF,
   DEEPSEEK_REASONER_MODEL_ID,
   DEEPSEEK_REASONER_MODEL_REF,
-  KIMI_CODE_BASE_URL,
-  KIMI_CODE_MODEL_ID,
-  KIMI_CODE_MODEL_REF,
+  KIMI_CODING_MODEL_ID,
+  KIMI_CODING_MODEL_REF,
   MINIMAX_API_BASE_URL,
   MINIMAX_HOSTED_MODEL_ID,
   MINIMAX_HOSTED_MODEL_REF,
