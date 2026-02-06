@@ -12,6 +12,7 @@ import {
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { deliveryContextFromSession, mergeDeliveryContext } from "../utils/delivery-context.js";
 import { loadSessionEntry } from "./session-utils.js";
+import { writeAssistantMessageToTranscript } from "./transcript-writer.js";
 
 export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
   const sentinel = await consumeRestartSentinel();
@@ -41,7 +42,7 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
     markerIndex === -1 ? undefined : sessionKey.slice(markerIndex + marker.length);
   const sessionThreadId = threadIdRaw?.trim() || undefined;
 
-  const { cfg, entry } = loadSessionEntry(sessionKey);
+  const { cfg, entry, storePath } = loadSessionEntry(sessionKey);
   const parsedTarget = resolveAnnounceTargetFromKey(baseSessionKey);
 
   // Prefer delivery context from sentinel (captured at restart) over session store
@@ -83,6 +84,18 @@ export async function scheduleRestartSentinelWake(_params: { deps: CliDeps }) {
     parsedTarget?.threadId ?? // From resolveAnnounceTargetFromKey (extracts :topic:N)
     sessionThreadId ??
     (origin?.threadId != null ? String(origin.threadId) : undefined);
+  // FIX #10018: Write the restart message to the transcript BEFORE delivering.
+  if (entry?.sessionId) {
+    const { storePath } = loadSessionEntry(sessionKey);
+    writeAssistantMessageToTranscript({
+      message,
+      label: "Gateway Restart",
+      sessionId: entry.sessionId,
+      storePath,
+      sessionFile: entry.sessionFile,
+      createIfMissing: true, 
+    });
+  }
 
   try {
     await deliverOutboundPayloads({
