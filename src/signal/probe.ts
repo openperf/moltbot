@@ -30,6 +30,36 @@ export async function probeSignal(baseUrl: string, timeoutMs: number): Promise<S
     version: null,
   };
   const check = await signalCheck(baseUrl, timeoutMs);
+
+  // When the HTTP request itself succeeds (we got a status code back) but the
+  // /api/v1/check endpoint returns a non-2xx response (e.g. 404), the process
+  // is still reachable.  Fall back to the JSON-RPC `version` call which works
+  // in both REST and JSON-RPC daemon modes of signal-cli.
+  if (!check.ok && check.status != null) {
+    try {
+      const version = await signalRpcRequest("version", undefined, {
+        baseUrl,
+        timeoutMs,
+      });
+      const parsedVersion = parseSignalVersion(version);
+      return {
+        ...result,
+        ok: true,
+        status: check.status,
+        version: parsedVersion,
+        elapsedMs: Date.now() - started,
+      };
+    } catch {
+      // JSON-RPC fallback also failed — report original check error.
+      return {
+        ...result,
+        status: check.status,
+        error: check.error ?? "unreachable",
+        elapsedMs: Date.now() - started,
+      };
+    }
+  }
+
   if (!check.ok) {
     return {
       ...result,
