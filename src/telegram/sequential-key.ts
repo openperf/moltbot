@@ -33,7 +33,8 @@ export function getTelegramSequentialKey(ctx: TelegramSequentialKeyContext): str
     ctx.update?.edited_channel_post ??
     ctx.update?.callback_query?.message;
   const chatId = msg?.chat?.id ?? ctx.chat?.id;
-  const rawText = msg?.text ?? msg?.caption;
+  const rawTextValue = msg?.text ?? msg?.caption;
+  const rawText = typeof rawTextValue === "string" ? rawTextValue : undefined;
   const botUsername = ctx.me?.username;
   if (isAbortRequestText(rawText, botUsername ? { botUsername } : undefined)) {
     if (typeof chatId === "number") {

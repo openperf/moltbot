@@ -344,6 +344,46 @@ describe("describeReplyTarget", () => {
     expect(result?.forwardedFrom?.fromId).toBe("123");
     expect(result?.forwardedFrom?.date).toBe(700);
   });
+
+  it("handles non-string text gracefully instead of producing [object Object]", () => {
+    const result = describeReplyTarget({
+      message_id: 10,
+      date: 2000,
+      chat: { id: 1, type: "private" },
+      reply_to_message: {
+        message_id: 9,
+        date: 1900,
+        chat: { id: 1, type: "private" },
+        // Simulate an edge case where text is an object instead of a string
+        text: { entities: [] } as unknown as string,
+        from: { id: 50, first_name: "Charlie", is_bot: false },
+      },
+      // oxlint-disable-next-line typescript/no-explicit-any
+    } as any);
+    // Should return null because the non-string text is treated as empty,
+    // NOT produce a body containing "[object Object]".
+    expect(result).toBeNull();
+  });
+
+  it("handles non-string caption gracefully", () => {
+    const result = describeReplyTarget({
+      message_id: 11,
+      date: 2100,
+      chat: { id: 1, type: "private" },
+      reply_to_message: {
+        message_id: 10,
+        date: 2000,
+        chat: { id: 1, type: "private" },
+        caption: { raw: "some data" } as unknown as string,
+        photo: [{ file_id: "abc", file_unique_id: "u1", width: 100, height: 100 }],
+        from: { id: 51, first_name: "Diana", is_bot: false },
+      },
+      // oxlint-disable-next-line typescript/no-explicit-any
+    } as any);
+    // Should fall through to media placeholder instead of [object Object]
+    expect(result).not.toBeNull();
+    expect(result?.body).not.toContain("[object Object]");
+  });
 });
 
 describe("expandTextLinks", () => {
