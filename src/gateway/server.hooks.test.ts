@@ -453,6 +453,53 @@ describe("gateway server hooks", () => {
     });
   });
 
+  test("sets sessionReuse=true on CronJob when explicit sessionKey is provided (#29518)", async () => {
+    testState.hooksConfig = {
+      enabled: true,
+      token: "hook-secret",
+      allowRequestSessionKey: true,
+    };
+    await withGatewayServer(async ({ port }) => {
+      // With explicit sessionKey → sessionReuse should be true
+      cronIsolatedRun.mockClear();
+      cronIsolatedRun.mockResolvedValueOnce({ status: "ok", summary: "done" });
+      const resExplicit = await fetch(`http://127.0.0.1:${port}/hooks/agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer hook-secret",
+        },
+        body: JSON.stringify({ message: "With key", sessionKey: "hook:stable" }),
+      });
+      expect(resExplicit.status).toBe(202);
+      await waitForSystemEvent();
+      const explicitCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as
+        | { job?: { sessionReuse?: boolean } }
+        | undefined;
+      expect(explicitCall?.job?.sessionReuse).toBe(true);
+      drainSystemEvents(resolveMainKey());
+
+      // Without sessionKey (auto-generated) → sessionReuse should be false
+      cronIsolatedRun.mockClear();
+      cronIsolatedRun.mockResolvedValueOnce({ status: "ok", summary: "done" });
+      const resGenerated = await fetch(`http://127.0.0.1:${port}/hooks/agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer hook-secret",
+        },
+        body: JSON.stringify({ message: "No key" }),
+      });
+      expect(resGenerated.status).toBe(202);
+      await waitForSystemEvent();
+      const generatedCall = (cronIsolatedRun.mock.calls[0] as unknown[] | undefined)?.[0] as
+        | { job?: { sessionReuse?: boolean } }
+        | undefined;
+      expect(generatedCall?.job?.sessionReuse).toBe(false);
+      drainSystemEvents(resolveMainKey());
+    });
+  });
+
   test("throttles repeated hook auth failures and resets after success", async () => {
     testState.hooksConfig = { enabled: true, token: "hook-secret" };
     await withGatewayServer(async ({ port }) => {

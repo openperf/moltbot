@@ -235,6 +235,9 @@ export type HookAgentPayload = {
 
 export type HookAgentDispatchPayload = Omit<HookAgentPayload, "sessionKey"> & {
   sessionKey: string;
+  /** `true` when the session key was explicitly provided (request payload,
+   *  mapping config, or `defaultSessionKey`) rather than auto-generated. */
+  sessionKeyExplicit?: boolean;
   allowUnsafeExternalContent?: boolean;
 };
 
@@ -301,12 +304,16 @@ export const getHookSessionKeyRequestPolicyError = () =>
 export const getHookSessionKeyPrefixError = (prefixes: string[]) =>
   `sessionKey must start with one of: ${prefixes.join(", ")}`;
 
+export type HookSessionKeyResult =
+  | { ok: true; value: string; explicit: boolean }
+  | { ok: false; error: string };
+
 export function resolveHookSessionKey(params: {
   hooksConfig: HooksConfigResolved;
   source: "request" | "mapping";
   sessionKey?: string;
   idFactory?: () => string;
-}): { ok: true; value: string } | { ok: false; error: string } {
+}): HookSessionKeyResult {
   const requested = resolveSessionKey(params.sessionKey);
   if (requested) {
     if (params.source === "request" && !params.hooksConfig.sessionPolicy.allowRequestSessionKey) {
@@ -316,12 +323,12 @@ export function resolveHookSessionKey(params: {
     if (allowedPrefixes && !isSessionKeyAllowedByPrefix(requested, allowedPrefixes)) {
       return { ok: false, error: getHookSessionKeyPrefixError(allowedPrefixes) };
     }
-    return { ok: true, value: requested };
+    return { ok: true, value: requested, explicit: true };
   }
 
   const defaultSessionKey = params.hooksConfig.sessionPolicy.defaultSessionKey;
   if (defaultSessionKey) {
-    return { ok: true, value: defaultSessionKey };
+    return { ok: true, value: defaultSessionKey, explicit: true };
   }
 
   const generated = `hook:${(params.idFactory ?? randomUUID)()}`;
@@ -329,7 +336,7 @@ export function resolveHookSessionKey(params: {
   if (allowedPrefixes && !isSessionKeyAllowedByPrefix(generated, allowedPrefixes)) {
     return { ok: false, error: getHookSessionKeyPrefixError(allowedPrefixes) };
   }
-  return { ok: true, value: generated };
+  return { ok: true, value: generated, explicit: false };
 }
 
 export function normalizeHookDispatchSessionKey(params: {

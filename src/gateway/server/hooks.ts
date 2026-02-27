@@ -46,6 +46,10 @@ export function createGatewayHooksRequestHandler(params: {
       agentId: value.agentId,
       name: value.name,
       enabled: true,
+      // Allow session reuse when the webhook caller provided an explicit
+      // (non-generated) sessionKey, so that conversation context is preserved
+      // across repeated webhook calls.  See: #29518
+      sessionReuse: value.sessionKeyExplicit === true,
       createdAtMs: now,
       updatedAtMs: now,
       schedule: { kind: "at", at: new Date(now).toISOString() },

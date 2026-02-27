@@ -117,6 +117,13 @@ export type CronJob = {
   description?: string;
   enabled: boolean;
   deleteAfterRun?: boolean;
+  /**
+   * When `true`, an isolated session target should reuse an existing session
+   * instead of forcing a new one.  Set by webhook hooks that receive an
+   * explicit (non-generated) `sessionKey` so that conversation context is
+   * preserved across repeated webhook calls.
+   */
+  sessionReuse?: boolean;
   createdAtMs: number;
   updatedAtMs: number;
   schedule: CronSchedule;

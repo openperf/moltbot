@@ -227,7 +227,7 @@ describe("gateway hooks helpers", () => {
       source: "request",
       sessionKey: "hook:manual",
     });
-    expect(allowed).toEqual({ ok: true, value: "hook:manual" });
+    expect(allowed).toEqual({ ok: true, value: "hook:manual", explicit: true });
   });
 
   test("resolveHookSessionKey enforces allowed prefixes", () => {
@@ -257,7 +257,7 @@ describe("gateway hooks helpers", () => {
       source: "mapping",
       sessionKey: "hook:gmail:1",
     });
-    expect(allowed).toEqual({ ok: true, value: "hook:gmail:1" });
+    expect(allowed).toEqual({ ok: true, value: "hook:gmail:1", explicit: true });
   });
 
   test("resolveHookSessionKey uses defaultSessionKey when request key is absent", () => {
@@ -278,7 +278,27 @@ describe("gateway hooks helpers", () => {
       hooksConfig: resolved,
       source: "request",
     });
-    expect(resolvedKey).toEqual({ ok: true, value: "hook:ingress" });
+    expect(resolvedKey).toEqual({ ok: true, value: "hook:ingress", explicit: true });
+  });
+
+  test("resolveHookSessionKey marks auto-generated keys as non-explicit", () => {
+    const cfg = {
+      hooks: { enabled: true, token: "secret" },
+    } as OpenClawConfig;
+    const resolved = resolveHooksConfig(cfg);
+    expect(resolved).not.toBeNull();
+    if (!resolved) {
+      return;
+    }
+    const generated = resolveHookSessionKey({
+      hooksConfig: resolved,
+      source: "mapping",
+    });
+    expect(generated.ok).toBe(true);
+    if (generated.ok) {
+      expect(generated.value).toMatch(/^hook:/);
+      expect(generated.explicit).toBe(false);
+    }
   });
 
   test("normalizeHookDispatchSessionKey strips duplicate target agent prefix", () => {

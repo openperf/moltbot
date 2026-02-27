@@ -157,4 +157,64 @@ describe("resolveCronSession", () => {
       expect(result.sessionEntry.modelOverride).toBe("some-model");
     });
   });
+
+  // Regression tests for #29518 — webhook hooks with explicit sessionKey
+  // should be able to reuse sessions when forceNew is false.
+  describe("webhook session reuse (#29518)", () => {
+    it("reuses session when forceNew is false (sessionReuse enabled)", () => {
+      const result = resolveWithStoredEntry({
+        sessionKey: "hook:my-stable-key",
+        entry: {
+          sessionId: "webhook-session-abc",
+          updatedAt: NOW_MS - 5000,
+          systemSent: true,
+          modelOverride: "gpt-4.1-mini",
+        },
+        forceNew: false,
+        fresh: true,
+      });
+
+      expect(result.sessionEntry.sessionId).toBe("webhook-session-abc");
+      expect(result.isNewSession).toBe(false);
+      expect(result.systemSent).toBe(true);
+      expect(result.sessionEntry.modelOverride).toBe("gpt-4.1-mini");
+    });
+
+    it("creates new session when forceNew is true (no sessionReuse)", () => {
+      const result = resolveWithStoredEntry({
+        sessionKey: "hook:auto-generated-uuid",
+        entry: {
+          sessionId: "webhook-session-def",
+          updatedAt: NOW_MS - 5000,
+          systemSent: true,
+        },
+        forceNew: true,
+        fresh: true,
+      });
+
+      expect(result.sessionEntry.sessionId).not.toBe("webhook-session-def");
+      expect(result.isNewSession).toBe(true);
+      expect(result.systemSent).toBe(false);
+    });
+
+    it("creates new session when forceNew is false but session is stale", () => {
+      const result = resolveWithStoredEntry({
+        sessionKey: "hook:my-stable-key",
+        entry: {
+          sessionId: "webhook-session-old",
+          updatedAt: NOW_MS - 86_400_000,
+          systemSent: true,
+          modelOverride: "sonnet-4",
+        },
+        forceNew: false,
+        fresh: false,
+      });
+
+      expect(result.sessionEntry.sessionId).not.toBe("webhook-session-old");
+      expect(result.isNewSession).toBe(true);
+      expect(result.systemSent).toBe(false);
+      // Overrides should still be preserved
+      expect(result.sessionEntry.modelOverride).toBe("sonnet-4");
+    });
+  });
 });
