@@ -106,6 +106,8 @@ export type CompactEmbeddedPiSessionParams = {
   sessionFile: string;
   workspaceDir: string;
   agentDir?: string;
+  /** Effective agent id for the run; used for agentDir bootstrap resolution. */
+  agentId?: string;
   config?: OpenClawConfig;
   skillsSnapshot?: SkillSnapshot;
   provider?: string;
@@ -359,7 +361,9 @@ export async function compactEmbeddedPiSessionDirect(
       config: params.config,
       sessionKey: params.sessionKey,
       sessionId: params.sessionId,
-      agentId: resolveSessionAgentId({ sessionKey: params.sessionKey, config: params.config }),
+      agentId:
+        params.agentId ??
+        resolveSessionAgentId({ sessionKey: params.sessionKey, config: params.config }),
       warn: makeBootstrapWarn({ sessionLabel, warn: (message) => log.warn(message) }),
     });
     const runAbortController = new AbortController();

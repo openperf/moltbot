@@ -740,6 +740,7 @@ export async function runEmbeddedPiAgent(
                 sessionFile: params.sessionFile,
                 workspaceDir: resolvedWorkspace,
                 agentDir,
+                agentId: workspaceResolution.agentId,
                 config: params.config,
                 skillsSnapshot: params.skillsSnapshot,
                 senderIsOwner: params.senderIsOwner,

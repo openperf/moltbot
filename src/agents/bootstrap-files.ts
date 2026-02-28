@@ -88,8 +88,13 @@ export async function resolveBootstrapFilesForRun(params: {
         sessionKey,
       );
       merged = [...merged, ...added];
-      const overrideNames = Array.from(overrides.keys()).join(", ");
-      params.warn?.(`bootstrap files from agentDir override workspace copies: ${overrideNames}`);
+      const actualOverrides = Array.from(overrides.keys()).filter((name) =>
+        existingNames.has(name),
+      );
+      if (actualOverrides.length > 0) {
+        const overrideNames = actualOverrides.join(", ");
+        params.warn?.(`bootstrap files from agentDir override workspace copies: ${overrideNames}`);
+      }
     }
   }
 
