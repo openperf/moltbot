@@ -188,6 +188,7 @@ export async function resolveReplyDirectives(params: {
           workspaceDir,
           cfg,
           skillFilter,
+          sessionKey,
         })
       : [];
   for (const command of skillCommands) {

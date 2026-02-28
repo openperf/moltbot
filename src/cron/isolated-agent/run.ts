@@ -370,6 +370,7 @@ export async function runCronIsolatedAgentTurn(params: {
     workspaceDir,
     config: cfgWithAgentDefaults,
     agentId,
+    sessionKey: agentSessionKey,
     existingSnapshot: existingSkillsSnapshot,
     isFastTestEnv,
   });

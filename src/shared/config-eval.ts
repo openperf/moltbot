@@ -51,6 +51,8 @@ export type RuntimeRequires = {
 type RuntimeRequirementEvalParams = {
   requires?: RuntimeRequires;
   hasBin: (bin: string) => boolean;
+  hasSandboxBin?: (bin: string) => boolean;
+  hasAnySandboxBin?: (bins: string[]) => boolean;
   hasAnyRemoteBin?: (bins: string[]) => boolean;
   hasRemoteBin?: (bin: string) => boolean;
   hasEnv: (envName: string) => boolean;
@@ -69,6 +71,9 @@ export function evaluateRuntimeRequires(params: RuntimeRequirementEvalParams): b
       if (params.hasBin(bin)) {
         continue;
       }
+      if (params.hasSandboxBin?.(bin)) {
+        continue;
+      }
       if (params.hasRemoteBin?.(bin)) {
         continue;
       }
@@ -79,8 +84,10 @@ export function evaluateRuntimeRequires(params: RuntimeRequirementEvalParams): b
   const requiredAnyBins = requires.anyBins ?? [];
   if (requiredAnyBins.length > 0) {
     const anyFound = requiredAnyBins.some((bin) => params.hasBin(bin));
-    if (!anyFound && !params.hasAnyRemoteBin?.(requiredAnyBins)) {
-      return false;
+    if (!anyFound && !params.hasAnySandboxBin?.(requiredAnyBins)) {
+      if (!params.hasAnyRemoteBin?.(requiredAnyBins)) {
+        return false;
+      }
     }
   }
 
@@ -109,14 +116,17 @@ export function evaluateRuntimeEligibility(
   params: {
     os?: string[];
     remotePlatforms?: string[];
+    sandboxPlatforms?: string[];
     always?: boolean;
   } & RuntimeRequirementEvalParams,
 ): boolean {
   const osList = params.os ?? [];
   const remotePlatforms = params.remotePlatforms ?? [];
+  const sandboxPlatforms = params.sandboxPlatforms ?? [];
   if (
     osList.length > 0 &&
     !osList.includes(resolveRuntimePlatform()) &&
+    !sandboxPlatforms.some((platform) => osList.includes(platform)) &&
     !remotePlatforms.some((platform) => osList.includes(platform))
   ) {
     return false;
@@ -127,6 +137,8 @@ export function evaluateRuntimeEligibility(
   return evaluateRuntimeRequires({
     requires: params.requires,
     hasBin: params.hasBin,
+    hasSandboxBin: params.hasSandboxBin,
+    hasAnySandboxBin: params.hasAnySandboxBin,
     hasRemoteBin: params.hasRemoteBin,
     hasAnyRemoteBin: params.hasAnyRemoteBin,
     hasEnv: params.hasEnv,

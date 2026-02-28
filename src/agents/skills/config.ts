@@ -86,9 +86,12 @@ export function shouldIncludeSkill(params: {
   return evaluateRuntimeEligibility({
     os: entry.metadata?.os,
     remotePlatforms: eligibility?.remote?.platforms,
+    sandboxPlatforms: eligibility?.sandbox ? [eligibility.sandbox.platform] : undefined,
     always: entry.metadata?.always,
     requires: entry.metadata?.requires,
     hasBin: hasBinary,
+    hasSandboxBin: eligibility?.sandbox?.hasBin,
+    hasAnySandboxBin: eligibility?.sandbox?.hasAnyBin,
     hasRemoteBin: eligibility?.remote?.hasBin,
     hasAnyRemoteBin: eligibility?.remote?.hasAnyBin,
     hasEnv: (envName) =>

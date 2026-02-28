@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import { listAgentIds, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import { resolveSandboxRuntimeStatus } from "../agents/sandbox.js";
 import { buildWorkspaceSkillCommandSpecs, type SkillCommandSpec } from "../agents/skills.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { getRemoteSkillEligibility } from "../infra/skills-remote.js";
+import { getSandboxSkillEligibility } from "../infra/skills-sandbox.js";
 import { listChatCommands } from "./commands-registry.js";
 
 export function listReservedChatSlashCommandNames(extraNames: string[] = []): Set<string> {
@@ -32,11 +34,19 @@ export function listSkillCommandsForWorkspace(params: {
   workspaceDir: string;
   cfg: OpenClawConfig;
   skillFilter?: string[];
+  sessionKey?: string;
 }): SkillCommandSpec[] {
+  const sandboxRuntime = resolveSandboxRuntimeStatus({
+    cfg: params.cfg,
+    sessionKey: params.sessionKey,
+  });
   return buildWorkspaceSkillCommandSpecs(params.workspaceDir, {
     config: params.cfg,
     skillFilter: params.skillFilter,
-    eligibility: { remote: getRemoteSkillEligibility() },
+    eligibility: {
+      remote: getRemoteSkillEligibility(),
+      ...(sandboxRuntime.sandboxed ? { sandbox: getSandboxSkillEligibility() } : {}),
+    },
     reservedNames: listReservedChatSlashCommandNames(),
   });
 }

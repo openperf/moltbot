@@ -77,6 +77,12 @@ export type SkillEligibilityContext = {
     hasAnyBin: (bins: string[]) => boolean;
     note?: string;
   };
+  sandbox?: {
+    hasBin: (bin: string) => boolean;
+    hasAnyBin: (bins: string[]) => boolean;
+    /** Platform reported by the sandbox container (e.g. "linux"). */
+    platform: string;
+  };
 };
 
 export type SkillSnapshot = {

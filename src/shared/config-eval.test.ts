@@ -50,4 +50,109 @@ describe("evaluateRuntimeEligibility", () => {
     });
     expect(result).toBe(true);
   });
+
+  // --- sandbox eligibility tests ---
+
+  it("accepts entries when sandbox platform satisfies OS requirements", () => {
+    const result = evaluateRuntimeEligibility({
+      os: ["linux"],
+      remotePlatforms: [],
+      sandboxPlatforms: ["linux"],
+      hasBin: () => true,
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+  });
+
+  it("rejects entries when neither local, remote, nor sandbox platform matches OS", () => {
+    const result = evaluateRuntimeEligibility({
+      os: ["darwin"],
+      remotePlatforms: [],
+      sandboxPlatforms: ["linux"],
+      hasBin: () => true,
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(false);
+  });
+
+  it("falls back to sandbox bin check when local hasBin returns false (requires.bins)", () => {
+    const result = evaluateRuntimeEligibility({
+      requires: { bins: ["gh"] },
+      hasBin: () => false,
+      hasSandboxBin: (bin) => bin === "gh",
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+  });
+
+  it("falls back to sandbox bin check when local hasBin returns false (requires.anyBins)", () => {
+    const result = evaluateRuntimeEligibility({
+      requires: { anyBins: ["claude", "codex", "pi"] },
+      hasBin: () => false,
+      hasAnySandboxBin: (bins) => bins.includes("codex"),
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+  });
+
+  it("rejects when bin is missing from local, sandbox, and remote", () => {
+    const result = evaluateRuntimeEligibility({
+      requires: { bins: ["gh"] },
+      hasBin: () => false,
+      hasSandboxBin: () => false,
+      hasRemoteBin: () => false,
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(false);
+  });
+
+  it("checks sandbox before remote for bins (sandbox wins)", () => {
+    const calls: string[] = [];
+    const result = evaluateRuntimeEligibility({
+      requires: { bins: ["gh"] },
+      hasBin: () => false,
+      hasSandboxBin: (bin) => {
+        calls.push(`sandbox:${bin}`);
+        return true;
+      },
+      hasRemoteBin: (bin) => {
+        calls.push(`remote:${bin}`);
+        return true;
+      },
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+    // Sandbox should be checked first; remote should not be reached.
+    expect(calls).toEqual(["sandbox:gh"]);
+  });
+
+  it("falls through sandbox to remote for bins when sandbox misses", () => {
+    const result = evaluateRuntimeEligibility({
+      requires: { bins: ["memo"] },
+      hasBin: () => false,
+      hasSandboxBin: () => false,
+      hasRemoteBin: (bin) => bin === "memo",
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+  });
+
+  it("falls through sandbox to remote for anyBins when sandbox misses", () => {
+    const result = evaluateRuntimeEligibility({
+      requires: { anyBins: ["claude", "codex"] },
+      hasBin: () => false,
+      hasAnySandboxBin: () => false,
+      hasAnyRemoteBin: (bins) => bins.includes("claude"),
+      hasEnv: () => true,
+      isConfigPathTruthy: () => true,
+    });
+    expect(result).toBe(true);
+  });
 });

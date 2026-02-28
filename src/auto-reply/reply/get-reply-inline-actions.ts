@@ -172,6 +172,7 @@ export async function handleInlineActions(params: {
             workspaceDir,
             cfg,
             skillFilter,
+            sessionKey,
           })
         : [];
 

@@ -35,11 +35,18 @@ export async function resolveCommandsSystemPromptBundle(
     sessionKey: params.sessionKey,
     sessionId: params.sessionEntry?.sessionId,
   });
+  const sandboxRuntime = resolveSandboxRuntimeStatus({
+    cfg: params.cfg,
+    sessionKey: params.sessionKey,
+  });
   const skillsSnapshot = (() => {
     try {
       return buildWorkspaceSkillSnapshot(workspaceDir, {
         config: params.cfg,
-        eligibility: { remote: getRemoteSkillEligibility(), sandbox: getSandboxSkillEligibility() },
+        eligibility: {
+          remote: getRemoteSkillEligibility(),
+          ...(sandboxRuntime.sandboxed ? { sandbox: getSandboxSkillEligibility() } : {}),
+        },
         snapshotVersion: getSkillsSnapshotVersion(workspaceDir),
       });
     } catch {
@@ -47,10 +54,6 @@ export async function resolveCommandsSystemPromptBundle(
     }
   })();
   const skillsPrompt = skillsSnapshot.prompt ?? "";
-  const sandboxRuntime = resolveSandboxRuntimeStatus({
-    cfg: params.cfg,
-    sessionKey: params.ctx.SessionKey ?? params.sessionKey,
-  });
   const tools = (() => {
     try {
       return createOpenClawCodingTools({

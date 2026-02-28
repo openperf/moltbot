@@ -142,6 +142,28 @@ vi.mock("../../infra/skills-remote.js", () => ({
   getRemoteSkillEligibility: vi.fn().mockReturnValue({}),
 }));
 
+vi.mock("../../infra/skills-sandbox.js", () => ({
+  getSandboxSkillEligibility: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock("../../agents/sandbox.js", () => ({
+  resolveSandboxRuntimeStatus: vi.fn().mockReturnValue({
+    agentId: "default",
+    sessionKey: "",
+    mainSessionKey: "main:default",
+    mode: "off",
+    sandboxed: false,
+    toolPolicy: {
+      allow: [],
+      deny: [],
+      sources: {
+        allow: { source: "default", key: "" },
+        deny: { source: "default", key: "" },
+      },
+    },
+  }),
+}));
+
 vi.mock("../../logger.js", () => ({
   logWarn: (...args: unknown[]) => logWarnMock(...args),
 }));
