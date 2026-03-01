@@ -1479,6 +1479,60 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
   });
 
+  it("removes ack reaction on NO_REPLY when removeAckAfterReply is enabled", async () => {
+    const reactionApi = vi.fn().mockResolvedValue(undefined);
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({
+      queuedFinal: false,
+    });
+
+    await dispatchWithContext({
+      context: createContext({
+        ackReactionPromise: Promise.resolve(true),
+        reactionApi,
+        removeAckAfterReply: true,
+      }),
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reactionApi).toHaveBeenCalledWith(123, 456, []);
+  });
+
+  it("does not remove ack reaction on NO_REPLY when removeAckAfterReply is disabled", async () => {
+    const reactionApi = vi.fn().mockResolvedValue(undefined);
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({
+      queuedFinal: false,
+    });
+
+    await dispatchWithContext({
+      context: createContext({
+        ackReactionPromise: Promise.resolve(true),
+        reactionApi,
+        removeAckAfterReply: false,
+      }),
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reactionApi).not.toHaveBeenCalled();
+  });
+
+  it("does not remove ack reaction on NO_REPLY when ack was not sent", async () => {
+    const reactionApi = vi.fn().mockResolvedValue(undefined);
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({
+      queuedFinal: false,
+    });
+
+    await dispatchWithContext({
+      context: createContext({
+        ackReactionPromise: Promise.resolve(false),
+        reactionApi,
+        removeAckAfterReply: true,
+      }),
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(reactionApi).not.toHaveBeenCalled();
+  });
+
   it("falls back when all finals are skipped and clears preview", async () => {
     const draftStream = createDraftStream(999);
     createTelegramDraftStream.mockReturnValue(draftStream);

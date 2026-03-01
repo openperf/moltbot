@@ -695,6 +695,28 @@ export const dispatchTelegramMessage = async ({
   }
 
   if (!hasFinalResponse) {
+    // Clean up ack reaction on NO_REPLY turns when there is no
+    // status-reaction controller so the reaction does not remain
+    // stuck indefinitely (#30585).
+    if (!statusReactionController) {
+      removeAckReactionAfterReply({
+        removeAfterReply: removeAckAfterReply,
+        ackReactionPromise,
+        ackReactionValue: ackReactionPromise ? "ack" : null,
+        remove: () => reactionApi?.(chatId, msg.message_id ?? 0, []) ?? Promise.resolve(),
+        onError: (err) => {
+          if (!msg.message_id) {
+            return;
+          }
+          logAckFailure({
+            log: logVerbose,
+            channel: "telegram",
+            target: `${chatId}/${msg.message_id}`,
+            error: err,
+          });
+        },
+      });
+    }
     clearGroupHistory();
     return;
   }
