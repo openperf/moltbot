@@ -88,16 +88,52 @@ describe("startHeartbeatRunner", () => {
     vi.setSystemTime(new Date(0));
 
     const runSpy = vi.fn().mockResolvedValue({ status: "ran", durationMs: 1 });
+
+    // Spy on global setTimeout so we can sabotage the re-armed primary timer
+    // after the first heartbeat fires, simulating the .unref() loss scenario.
+    const originalSetTimeout = globalThis.setTimeout;
+    let killNextPrimaryTimer = false;
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      fn: Function,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      const id = originalSetTimeout(fn as Parameters<typeof originalSetTimeout>[0], delay, ...args);
+      // After the first heartbeat, the runner calls scheduleNext() which
+      // creates a new setTimeout.  We intercept it and immediately clear it
+      // to simulate the timer being lost.
+      if (killNextPrimaryTimer && typeof delay === "number" && delay > 0) {
+        clearTimeout(id);
+        killNextPrimaryTimer = false;
+      }
+      return id;
+    }) as typeof globalThis.setTimeout);
+
     const runner = startDefaultRunner(runSpy);
 
     // First heartbeat fires normally at 30 min
     await vi.advanceTimersByTimeAsync(30 * 60_000 + 1_000);
     expect(runSpy).toHaveBeenCalledTimes(1);
 
-    // Advance well past the next due time -- the watchdog should eventually
-    // detect the overdue agent and trigger a heartbeat wake even if the
-    // primary setTimeout somehow failed to fire.
-    await vi.advanceTimersByTimeAsync(30 * 60_000 + 30_000);
+    // Now sabotage the next primary timer that scheduleNext() will create.
+    // The run callback triggers scheduleNext() internally, but since the run
+    // already completed above we need to arm the sabotage for the *next*
+    // config-driven reschedule.  Force a config update to trigger a new
+    // scheduleNext() whose timer we immediately kill.
+    killNextPrimaryTimer = true;
+    runner.updateConfig({
+      agents: { defaults: { heartbeat: { every: "30m" } } },
+    } as OpenClawConfig);
+
+    // Restore setTimeout so the watchdog's requestHeartbeatNow path works
+    // normally from here on.
+    setTimeoutSpy.mockRestore();
+
+    // Advance past the next due time.  The primary timer is dead, so only
+    // the watchdog (setInterval) can trigger the second heartbeat.
+    // Watchdog polls at minIntervalMs/4 = 30*60_000/4 = 450_000ms = 7.5 min
+    // We advance 35 min to be safe.
+    await vi.advanceTimersByTimeAsync(35 * 60_000);
     expect(runSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
 
     runner.stop();
