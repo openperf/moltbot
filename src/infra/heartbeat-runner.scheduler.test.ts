@@ -107,7 +107,7 @@ describe("startHeartbeatRunner", () => {
         killNextPrimaryTimer = false;
       }
       return id;
-    }) as typeof globalThis.setTimeout);
+    }) as unknown as typeof globalThis.setTimeout);
 
     const runner = startDefaultRunner(runSpy);
 
