@@ -36,7 +36,10 @@ import {
   validateChatInjectParams,
   validateChatSendParams,
 } from "../protocol/index.js";
-import { getMaxChatHistoryMessagesBytes } from "../server-constants.js";
+import {
+  getMaxChatHistoryMessagesBytes,
+  MAX_TRACKED_CHAT_SESSION_KEYS,
+} from "../server-constants.js";
 import {
   capArrayByJsonBytes,
   loadSessionEntry,
@@ -47,7 +50,28 @@ import { formatForLog } from "../ws-log.js";
 import { injectTimestamp, timestampOptsFromConfig } from "./agent-timestamp.js";
 import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
 import { appendInjectedAssistantMessageToTranscript } from "./chat-transcript-inject.js";
-import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
+import type { GatewayClient, GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
+
+/** Associate a session key with a client for session-scoped chat delivery. */
+function trackChatSessionKey(client: GatewayClient | null, sessionKey: string | undefined): void {
+  if (!client || !sessionKey) {
+    return;
+  }
+  if (!client.chatSessionKeys) {
+    client.chatSessionKeys = new Set();
+  }
+  // Re-insert to refresh iteration order (most-recently-used last).
+  if (client.chatSessionKeys.has(sessionKey)) {
+    client.chatSessionKeys.delete(sessionKey);
+  } else if (client.chatSessionKeys.size >= MAX_TRACKED_CHAT_SESSION_KEYS) {
+    // Evict the oldest (first-inserted) key to stay within the cap.
+    const oldest = client.chatSessionKeys.values().next().value;
+    if (oldest !== undefined) {
+      client.chatSessionKeys.delete(oldest);
+    }
+  }
+  client.chatSessionKeys.add(sessionKey);
+}
 
 type TranscriptAppendResult = {
   ok: boolean;
@@ -523,7 +547,7 @@ function broadcastChatError(params: {
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
-  "chat.history": async ({ params, respond, context }) => {
+  "chat.history": async ({ params, respond, context, client }) => {
     if (!validateChatHistoryParams(params)) {
       respond(
         false,
@@ -539,7 +563,15 @@ export const chatHandlers: GatewayRequestHandlers = {
       sessionKey: string;
       limit?: number;
     };
-    const { cfg, storePath, entry } = loadSessionEntry(sessionKey);
+
+    // Track session association for session-scoped chat event delivery.
+    // Also track the canonical key so events broadcast under the resolved
+    // form are not filtered out (mirrors the chat.send logic).
+    trackChatSessionKey(client, sessionKey);
+    const { cfg, storePath, entry, canonicalKey } = loadSessionEntry(sessionKey);
+    if (canonicalKey !== sessionKey) {
+      trackChatSessionKey(client, canonicalKey);
+    }
     const sessionId = entry?.sessionId;
     const rawMessages =
       sessionId && storePath ? readSessionMessages(sessionId, storePath, entry?.sessionFile) : [];
@@ -721,6 +753,17 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+
+    // Track session association for session-scoped chat event delivery.
+    // Register both the raw key (used in broadcast payloads) and the
+    // canonical key (used by agent-initiated chat runs) so that the
+    // shouldReceiveChatEvent check matches regardless of which form
+    // appears in the event payload.
+    trackChatSessionKey(client, rawSessionKey);
+    if (sessionKey !== rawSessionKey) {
+      trackChatSessionKey(client, sessionKey);
+    }
+
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,

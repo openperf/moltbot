@@ -21,6 +21,8 @@ export type GatewayClient = {
   canvasHostUrl?: string;
   canvasCapability?: string;
   canvasCapabilityExpiresAtMs?: number;
+  /** Tracked session keys for session-scoped chat event delivery. */
+  chatSessionKeys?: Set<string>;
 };
 
 export type RespondFn = (
