@@ -91,7 +91,17 @@ function shouldReceiveChatEvent(client: GatewayWsClient, sessionKey: string | un
   if (!sessionKey) {
     return true;
   }
-  return tracked.has(sessionKey);
+  // Normalize the event key before matching: chat events may be broadcast
+  // under a non-canonical alias (e.g. rawSessionKey with mixed case) while
+  // the tracked set stores the canonical (lowercased) form, or vice-versa.
+  if (tracked.has(sessionKey)) {
+    return true;
+  }
+  const normalized = sessionKey.toLowerCase();
+  if (normalized !== sessionKey && tracked.has(normalized)) {
+    return true;
+  }
+  return false;
 }
 
 export function createGatewayBroadcaster(params: { clients: Set<GatewayWsClient> }) {

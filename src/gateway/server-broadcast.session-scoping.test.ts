@@ -192,4 +192,17 @@ describe("chat broadcast session scoping", () => {
     broadcast("chat", { sessionKey: "s-new", state: "delta" });
     expect(getSentPayloads(client)).toHaveLength(1);
   });
+
+  it("matches session keys case-insensitively for alias tolerance", () => {
+    const client = createMockClient({
+      connId: "a",
+      chatSessionKeys: new Set(["main"]),
+    });
+    const clients = new Set([client]);
+    const { broadcast } = createGatewayBroadcaster({ clients });
+
+    // Event broadcast with mixed-case alias should still match.
+    broadcast("chat", { sessionKey: "Main", state: "delta" });
+    expect(getSentPayloads(client)).toHaveLength(1);
+  });
 });
