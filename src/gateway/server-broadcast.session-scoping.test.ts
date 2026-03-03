@@ -205,4 +205,31 @@ describe("chat broadcast session scoping", () => {
     broadcast("chat", { sessionKey: "Main", state: "delta" });
     expect(getSentPayloads(client)).toHaveLength(1);
   });
+
+  it("matches alias-equivalent session keys via canonical resolution", () => {
+    // Client tracked the canonical key (e.g. resolved from "main" alias).
+    const client = createMockClient({
+      connId: "a",
+      chatSessionKeys: new Set(["agent:ops:work"]),
+    });
+    const clients = new Set([client]);
+    const { broadcast } = createGatewayBroadcaster({ clients });
+
+    // Event broadcast with the raw alias "main" — after canonical
+    // resolution this should match "agent:ops:work" in the tracked set.
+    broadcast("chat", { sessionKey: "main", state: "delta" });
+    expect(getSentPayloads(client)).toHaveLength(1);
+  });
+
+  it("still filters when canonical key does not match tracked set", () => {
+    const client = createMockClient({
+      connId: "a",
+      chatSessionKeys: new Set(["agent:ops:work"]),
+    });
+    const clients = new Set([client]);
+    const { broadcast } = createGatewayBroadcaster({ clients });
+
+    broadcast("chat", { sessionKey: "unrelated-session", state: "delta" });
+    expect(getSentPayloads(client)).toHaveLength(0);
+  });
 });
