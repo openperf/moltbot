@@ -35,3 +35,4 @@ export const HEALTH_REFRESH_INTERVAL_MS = 60_000;
 export const DEDUPE_TTL_MS = 5 * 60_000;
 export const DEDUPE_MAX = 1000;
 export const MAX_TRACKED_CHAT_SESSION_KEYS = 500; // per-connection cap to prevent unbounded growth
+export const MAX_SESSION_KEY_LENGTH = 256; // max byte length for a single session key to prevent memory abuse

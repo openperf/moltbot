@@ -38,6 +38,7 @@ import {
 } from "../protocol/index.js";
 import {
   getMaxChatHistoryMessagesBytes,
+  MAX_SESSION_KEY_LENGTH,
   MAX_TRACKED_CHAT_SESSION_KEYS,
 } from "../server-constants.js";
 import {
@@ -62,6 +63,10 @@ import type { GatewayClient, GatewayRequestContext, GatewayRequestHandlers } fro
  */
 function trackChatSessionKey(client: GatewayClient | null, sessionKey: string | undefined): void {
   if (!client || !sessionKey) {
+    return;
+  }
+  // Guard against oversized keys to prevent memory abuse from malicious clients.
+  if (sessionKey.length > MAX_SESSION_KEY_LENGTH) {
     return;
   }
   if (!client.chatSessionKeys) {
