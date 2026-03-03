@@ -87,8 +87,13 @@ const ERROR_PATTERNS = {
 
 const BILLING_ERROR_HEAD_RE =
   /^(?:error[:\s-]+)?billing(?:\s+error)?(?:[:\s-]+|$)|^(?:error[:\s-]+)?(?:credit balance|insufficient credits?|payment required|http\s*402\b)/i;
-const BILLING_ERROR_HARD_402_RE =
-  /["']?(?:status|code)["']?\s*[:=]\s*402\b|\bhttp\s*402\b|\berror(?:\s+code)?\s*[:=]?\s*402\b|^\s*402\s+payment/i;
+/**
+ * Strict 402 pattern for long text (>512 chars). Only matches structured
+ * JSON-style markers like `"code":402` or `"status":402`, not casual mentions
+ * such as `http 402` that appear in assistant content discussing error handling.
+ * Real API billing error payloads >512 chars are always JSON-structured.
+ */
+const BILLING_ERROR_HARD_402_RE = /["'](?:status|code)["']\s*[:=]\s*402\b/i;
 const BILLING_ERROR_MAX_LENGTH = 512;
 
 function matchesErrorPatterns(raw: string, patterns: readonly ErrorPattern[]): boolean {

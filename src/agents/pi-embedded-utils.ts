@@ -217,9 +217,13 @@ export function extractAssistantText(msg: AssistantMessage): string {
       joinWith: "\n",
       normalizeText: (text) => text.trim(),
     }) ?? "";
-  // Only apply keyword-based error rewrites when the assistant message is actually an error.
-  // Otherwise normal prose that *mentions* errors (e.g. "context overflow") can get clobbered.
-  const errorContext = msg.stopReason === "error" || Boolean(msg.errorMessage?.trim());
+  // Only apply keyword-based error rewrites when the assistant message is actually
+  // an error response.  A non-empty `errorMessage` alone is not sufficient — some
+  // providers populate it even on successful completions (e.g. HTTP 402 in the
+  // metadata while the content is a normal reply discussing billing topics).
+  // Require `stopReason === "error"` so that legitimate assistant prose mentioning
+  // billing/payment/402 is never silently replaced with a generic error banner.
+  const errorContext = msg.stopReason === "error";
   return sanitizeUserFacingText(extracted, { errorContext });
 }
 
