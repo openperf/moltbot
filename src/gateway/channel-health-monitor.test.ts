@@ -456,7 +456,7 @@ describe("channel-health-monitor", () => {
   describe("stale socket detection", () => {
     const STALE_THRESHOLD = 30 * 60_000;
 
-    it("restarts a channel with no events past the stale threshold", async () => {
+    it("restarts a channel whose events stopped arriving past the stale threshold", async () => {
       const now = Date.now();
       const manager = createSlackSnapshotManager(
         runningConnectedSlackAccount({
@@ -489,14 +489,14 @@ describe("channel-health-monitor", () => {
       await expectNoRestart(manager);
     });
 
-    it("restarts a channel that never received any event past the stale threshold", async () => {
+    it("does not restart a channel that never received any event (avoids false stale-socket)", async () => {
       const now = Date.now();
       const manager = createSlackSnapshotManager(
         runningConnectedSlackAccount({
           lastStartAt: now - STALE_THRESHOLD - 60_000,
         }),
       );
-      await expectRestartedChannel(manager, "slack");
+      await expectNoRestart(manager);
     });
 
     it("respects custom staleEventThresholdMs", async () => {
