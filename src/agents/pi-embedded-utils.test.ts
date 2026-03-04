@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   extractAssistantText,
   formatReasoningMessage,
+  stripChatMlDelimiters,
   stripDowngradedToolCallText,
+  stripGenericToolCallXml,
 } from "./pi-embedded-utils.js";
 
 function makeAssistantMessage(
@@ -549,9 +551,124 @@ describe("stripDowngradedToolCallText", () => {
   });
 });
 
+describe("stripGenericToolCallXml", () => {
+  it("strips full <tool_call> blocks", () => {
+    const text =
+      "Before<tool_call>\n<arg_name>command</arg_name>\n<arg_value>ls -la</arg_value>\n</tool_call>After";
+    expect(stripGenericToolCallXml(text)).toBe("BeforeAfter");
+  });
+
+  it("strips stray closing tags from partial streaming", () => {
+    expect(stripGenericToolCallXml("result text</arg_value></tool_call>")).toBe("result text");
+  });
+
+  it("strips stray opening tags", () => {
+    expect(stripGenericToolCallXml("<tool_call><arg_name>cmd")).toBe("cmd");
+  });
+
+  it("handles multiple tool_call blocks", () => {
+    const text = "A<tool_call>first</tool_call>B<tool_call>second</tool_call>C";
+    expect(stripGenericToolCallXml(text)).toBe("ABC");
+  });
+
+  it("preserves text without tool_call tags", () => {
+    expect(stripGenericToolCallXml("Normal response text.")).toBe("Normal response text.");
+  });
+
+  it("returns empty for empty input", () => {
+    expect(stripGenericToolCallXml("")).toBe("");
+  });
+});
+
+describe("stripChatMlDelimiters", () => {
+  it("strips <|assistant|> with trailing separator", () => {
+    expect(stripChatMlDelimiters("<|assistant|>---\nHello world")).toBe("Hello world");
+  });
+
+  it("strips <|assistant|> without trailing separator", () => {
+    expect(stripChatMlDelimiters("<|assistant|>Hello world")).toBe("Hello world");
+  });
+
+  it("strips <|im_start|> and <|im_end|> delimiters", () => {
+    expect(stripChatMlDelimiters("<|im_start|>assistant\nHello<|im_end|>")).toBe("Hello");
+  });
+
+  it("strips <|user|> and <|system|> delimiters", () => {
+    expect(stripChatMlDelimiters("<|user|>prompt<|system|>instructions")).toBe(
+      "promptinstructions",
+    );
+  });
+
+  it("strips <|end|> and <|endoftext|> delimiters", () => {
+    expect(stripChatMlDelimiters("Response<|end|>")).toBe("Response");
+    expect(stripChatMlDelimiters("Response<|endoftext|>")).toBe("Response");
+  });
+
+  it("preserves text without ChatML delimiters", () => {
+    expect(stripChatMlDelimiters("Normal response text.")).toBe("Normal response text.");
+  });
+
+  it("preserves legitimate pipe usage", () => {
+    expect(stripChatMlDelimiters("Use cmd | grep pattern")).toBe("Use cmd | grep pattern");
+  });
+
+  it("returns empty for empty input", () => {
+    expect(stripChatMlDelimiters("")).toBe("");
+  });
+});
+
+describe("extractAssistantText strips leaked XML and ChatML", () => {
+  it("strips generic tool_call XML from assistant text", () => {
+    const msg = makeAssistantMessage({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "Here is the result.</arg_value></tool_call>",
+        },
+      ],
+      timestamp: Date.now(),
+    });
+    expect(extractAssistantText(msg)).toBe("Here is the result.");
+  });
+
+  it("strips ChatML delimiters from assistant text", () => {
+    const msg = makeAssistantMessage({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "<|assistant|>---\nHello, how can I help?",
+        },
+      ],
+      timestamp: Date.now(),
+    });
+    expect(extractAssistantText(msg)).toBe("Hello, how can I help?");
+  });
+
+  it("strips both XML and ChatML in the same message", () => {
+    const msg = makeAssistantMessage({
+      role: "assistant",
+      content: [
+        {
+          type: "text",
+          text: "<|assistant|>Result</arg_value></tool_call>",
+        },
+      ],
+      timestamp: Date.now(),
+    });
+    expect(extractAssistantText(msg)).toBe("Result");
+  });
+});
+
 describe("empty input handling", () => {
   it("returns empty string", () => {
-    const helpers = [formatReasoningMessage, stripDowngradedToolCallText];
+    const helpers = [
+      formatReasoningMessage,
+      stripDowngradedToolCallText,
+      stripGenericToolCallXml,
+      stripChatMlDelimiters,
+    ];
     for (const helper of helpers) {
       expect(helper("")).toBe("");
     }

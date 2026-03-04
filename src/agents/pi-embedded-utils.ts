@@ -34,6 +34,58 @@ export function stripMinimaxToolCallXml(text: string): string {
 }
 
 /**
+ * Strip generic XML tool call tags that leak into text content.
+ * Some models (e.g., Qwen, local models via Ollama) emit tool calls as XML
+ * with `<tool_call>`, `<arg_name>`, `<arg_value>` tags. When streaming is
+ * interrupted or the model fails to produce proper structured tool calls,
+ * these tags leak into user-visible text.
+ */
+export function stripGenericToolCallXml(text: string): string {
+  if (!text) {
+    return text;
+  }
+  // Fast bail-out: skip regex work when no relevant tags are present.
+  if (!/(?:tool_call|arg_name|arg_value)/i.test(text)) {
+    return text;
+  }
+
+  // Remove full <tool_call>...</tool_call> blocks (non-greedy).
+  let cleaned = text.replace(/<tool_call>\s*[\s\S]*?<\/tool_call>/gi, "");
+
+  // Remove stray opening/closing tags that remain after partial streaming.
+  cleaned = cleaned.replace(/<\/?(?:tool_call|arg_name|arg_value)>/gi, "");
+
+  return cleaned.trim();
+}
+
+/**
+ * Strip ChatML-style template delimiters that leak into text content.
+ * Models using the ChatML format (e.g., Qwen, some local models) may
+ * emit delimiters like `<|assistant|>`, `<|im_start|>`, `<|im_end|>`
+ * into their text output. These must not reach the user.
+ */
+export function stripChatMlDelimiters(text: string): string {
+  if (!text) {
+    return text;
+  }
+  // Fast bail-out: the pipe-delimited syntax is distinctive enough.
+  if (!text.includes("<|")) {
+    return text;
+  }
+
+  // Handle <|im_start|> with its role argument (e.g. <|im_start|>assistant\n)
+  let cleaned = text.replace(/<\|im_start\|>\s*(?:assistant|user|system)\n?/gi, "");
+
+  // Handle all other known ChatML delimiters and optional trailing separators
+  cleaned = cleaned.replace(
+    /<\|(?:assistant|user|system|end|endoftext|im_end)\|>(?:\s*---)?/gi,
+    "",
+  );
+
+  return cleaned.trim();
+}
+
+/**
  * Strip downgraded tool call text representations that leak into text content.
  * When replaying history to Gemini, tool calls without `thought_signature` are
  * downgraded to text blocks like `[Tool Call: name (ID: ...)]`. These should
@@ -212,7 +264,9 @@ export function extractAssistantText(msg: AssistantMessage): string {
     extractTextFromChatContent(msg.content, {
       sanitizeText: (text) =>
         stripThinkingTagsFromText(
-          stripDowngradedToolCallText(stripMinimaxToolCallXml(text)),
+          stripChatMlDelimiters(
+            stripGenericToolCallXml(stripDowngradedToolCallText(stripMinimaxToolCallXml(text))),
+          ),
         ).trim(),
       joinWith: "\n",
       normalizeText: (text) => text.trim(),
