@@ -1,3 +1,4 @@
+import { computeNextRunAtMs } from "../schedule.js";
 import type { CronJob, CronJobCreate, CronJobPatch } from "../types.js";
 import {
   applyJobPatch,
@@ -405,6 +406,34 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
       startedAt,
       endedAt,
     });
+
+    // For "every" interval jobs, manual runs must not shift the schedule
+    // cadence.  applyJobResult computes nextRunAtMs via computeJobNextRunAtMs
+    // which prefers lastRunAtMs-based cadence — correct for timer-triggered
+    // runs but causes schedule drift when lastRunAtMs is set to the manual
+    // execution time rather than a scheduled slot.  Recompute using the pure
+    // anchor-based schedule so the original cadence is preserved (#33940).
+    if (!shouldDelete && job.enabled && job.schedule.kind === "every") {
+      const anchorNext = computeNextRunAtMs(job.schedule, endedAt);
+      if (typeof anchorNext === "number" && Number.isFinite(anchorNext)) {
+        if (coreResult.status === "error") {
+          // For errored runs, combine anchor-based cadence with backoff protection.
+          // We cannot reuse job.state.nextRunAtMs from applyJobResult because it
+          // was computed via computeJobNextRunAtMs which uses the drifted lastRunAtMs.
+          // Instead, recompute the backoff floor directly from endedAt (#33940).
+          const backoffSchedule = [30_000, 60_000, 5 * 60_000, 15 * 60_000, 60 * 60_000];
+          const errIdx = Math.min(
+            (job.state.consecutiveErrors ?? 1) - 1,
+            backoffSchedule.length - 1,
+          );
+          const backoffMs = backoffSchedule[Math.max(0, errIdx)];
+          const backoffFloor = endedAt + backoffMs;
+          job.state.nextRunAtMs = Math.max(anchorNext, backoffFloor);
+        } else {
+          job.state.nextRunAtMs = anchorNext;
+        }
+      }
+    }
 
     emit(state, {
       jobId: job.id,
