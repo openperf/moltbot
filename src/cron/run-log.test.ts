@@ -66,6 +66,38 @@ describe("cron run log", () => {
     );
   });
 
+  const isWindows = process.platform === "win32";
+
+  it.skipIf(isWindows)("creates run log file with owner-only permissions (0o600)", async () => {
+    await withRunLogDir("openclaw-cron-log-perm-", async (dir) => {
+      const logPath = path.join(dir, "runs", "job-perm.jsonl");
+      await appendCronRunLog(logPath, {
+        ts: 1,
+        jobId: "job-perm",
+        action: "finished",
+        status: "ok",
+      });
+      const stat = await fs.stat(logPath);
+      // eslint-disable-next-line no-bitwise
+      expect(stat.mode & 0o777).toBe(0o600);
+    });
+  });
+
+  it.skipIf(isWindows)("creates runs directory with owner-only permissions (0o700)", async () => {
+    await withRunLogDir("openclaw-cron-log-dirperm-", async (dir) => {
+      const logPath = path.join(dir, "runs", "job-dirperm.jsonl");
+      await appendCronRunLog(logPath, {
+        ts: 1,
+        jobId: "job-dirperm",
+        action: "finished",
+        status: "ok",
+      });
+      const stat = await fs.stat(path.dirname(logPath));
+      // eslint-disable-next-line no-bitwise
+      expect(stat.mode & 0o777).toBe(0o700);
+    });
+  });
+
   it("appends JSONL and prunes by line count", async () => {
     await withRunLogDir("openclaw-cron-log-", async (dir) => {
       const logPath = path.join(dir, "runs", "job-1.jsonl");

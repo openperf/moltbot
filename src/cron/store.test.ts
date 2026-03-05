@@ -84,6 +84,35 @@ describe("cron store", () => {
 describe("saveCronStore", () => {
   const dummyStore: CronStoreFile = { version: 1, jobs: [] };
 
+  const isWindows = process.platform === "win32";
+
+  it.skipIf(isWindows)("creates store file with owner-only permissions (0o600)", async () => {
+    const { storePath } = await makeStorePath();
+    await saveCronStore(storePath, dummyStore);
+    const stat = await fs.stat(storePath);
+    // eslint-disable-next-line no-bitwise
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(isWindows)("creates backup file with owner-only permissions (0o600)", async () => {
+    const { storePath } = await makeStorePath();
+    const first = makeStore("perm-1", true);
+    const second = makeStore("perm-2", false);
+    await saveCronStore(storePath, first);
+    await saveCronStore(storePath, second);
+    const stat = await fs.stat(`${storePath}.bak`);
+    // eslint-disable-next-line no-bitwise
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(isWindows)("creates parent directory with owner-only permissions (0o700)", async () => {
+    const { storePath } = await makeStorePath();
+    await saveCronStore(storePath, dummyStore);
+    const stat = await fs.stat(path.dirname(storePath));
+    // eslint-disable-next-line no-bitwise
+    expect(stat.mode & 0o777).toBe(0o700);
+  });
+
   it("persists and round-trips a store file", async () => {
     const { storePath } = await makeStorePath();
     await saveCronStore(storePath, dummyStore);
