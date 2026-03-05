@@ -9,6 +9,8 @@ import {
   isCompactionFailureError,
   isContextOverflowError,
   isLikelyContextOverflowError,
+  isOverloadedErrorMessage,
+  isRateLimitErrorMessage,
   isTransientHttpError,
   sanitizeUserFacingText,
 } from "../../agents/pi-embedded-helpers.js";
@@ -617,20 +619,66 @@ export async function runAgentTurnWithFallback(params: {
     }
   }
 
-  // If the run completed but with an embedded context overflow error that
-  // wasn't recovered from (e.g. compaction reset already attempted), surface
-  // the error to the user instead of silently returning an empty response.
-  // See #26905: Slack DM sessions silently swallowed messages when context
-  // overflow errors were returned as embedded error payloads.
+  // If the run completed but with an embedded error that wasn't recovered
+  // from and no payload text was generated, surface the error to the user
+  // instead of silently returning an empty response.
+  // See #26905 (context overflow) and #36142 (rate limit / overload mid-turn).
   const finalEmbeddedError = runResult?.meta?.error;
   const hasPayloadText = runResult?.payloads?.some((p) => p.text?.trim());
-  if (finalEmbeddedError && isContextOverflowError(finalEmbeddedError.message) && !hasPayloadText) {
-    return {
-      kind: "final",
-      payload: {
-        text: "⚠️ Context overflow — this conversation is too large for the model. Use /new to start a fresh session.",
-      },
-    };
+  if (finalEmbeddedError && !hasPayloadText) {
+    const errMsg = finalEmbeddedError.message ?? "";
+
+    // Context overflow: no mid-turn cleanup needed — the run typically
+    // failed before any tool calls were dispatched.
+    if (isContextOverflowError(errMsg)) {
+      return {
+        kind: "final",
+        payload: {
+          text: "⚠️ Context overflow — this conversation is too large for the model. Use /new to start a fresh session.",
+        },
+      };
+    }
+
+    // Rate-limit / overload / generic errors may occur *after* tool calls
+    // have already completed (mid-turn).  Flush any queued block replies and
+    // await pending tool tasks before returning so that partial results are
+    // not lost or delivered out of order.
+    if (params.blockReplyPipeline) {
+      await params.blockReplyPipeline.flush({ force: true });
+      params.blockReplyPipeline.stop();
+    }
+    if (params.pendingToolTasks.size > 0) {
+      await Promise.allSettled(params.pendingToolTasks);
+    }
+
+    if (isRateLimitErrorMessage(errMsg)) {
+      return {
+        kind: "final",
+        payload: {
+          text: "⚠️ API rate limit reached mid-turn — the model couldn't generate a response after tool calls completed. Please try again in a moment.",
+        },
+      };
+    }
+    if (isOverloadedErrorMessage(errMsg)) {
+      return {
+        kind: "final",
+        payload: {
+          text: "⚠️ The AI service is temporarily overloaded — the model couldn't generate a response after tool calls completed. Please try again in a moment.",
+        },
+      };
+    }
+
+    // Generic fallback: any other embedded error with no payload text should
+    // be surfaced rather than swallowed silently.
+    if (errMsg) {
+      const safeMsg = sanitizeUserFacingText(errMsg, { errorContext: true });
+      return {
+        kind: "final",
+        payload: {
+          text: `⚠️ Agent error mid-turn: ${safeMsg.replace(/\.\s*$/, "")}.\nThe model ran tools but couldn't complete its response. Please try again.`,
+        },
+      };
+    }
   }
 
   return {
