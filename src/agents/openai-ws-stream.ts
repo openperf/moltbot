@@ -109,6 +109,19 @@ function toNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * Extract the call_id from a potentially pipe-delimited tool call ID.
+ *
+ * pi-ai stores OpenAI Responses API tool call IDs as `{call_id}|{item_id}`
+ * compound strings.  The WebSocket path must send only the `call_id` portion
+ * back to the API (the `item_id` / `fc_*` part is handled separately by the
+ * Responses API provider when it builds the outbound `function_call` items).
+ */
+function extractCallId(id: string): string {
+  const pipeIndex = id.indexOf("|");
+  return pipeIndex > 0 ? id.slice(0, pipeIndex) : id;
+}
+
 /** Convert pi-ai content (string | ContentPart[]) to plain text. */
 function contentToText(content: unknown): string {
   if (typeof content === "string") {
@@ -219,7 +232,8 @@ export function convertMessagesToInputItems(messages: Message[]): InputItem[] {
               });
               textParts.length = 0;
             }
-            const callId = toNonEmptyString(block.id);
+            const rawId = toNonEmptyString(block.id);
+            const callId = rawId ? extractCallId(rawId) : null;
             const toolName = toNonEmptyString(block.name);
             if (!callId || !toolName) {
               continue;
@@ -263,7 +277,8 @@ export function convertMessagesToInputItems(messages: Message[]): InputItem[] {
         content: unknown;
         isError: boolean;
       };
-      const callId = toNonEmptyString(tr.toolCallId) ?? toNonEmptyString(tr.toolUseId);
+      const rawCallId = toNonEmptyString(tr.toolCallId) ?? toNonEmptyString(tr.toolUseId);
+      const callId = rawCallId ? extractCallId(rawCallId) : null;
       if (!callId) {
         continue;
       }

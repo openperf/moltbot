@@ -521,6 +521,85 @@ describe("convertMessagesToInputItems", () => {
   it("returns empty array for empty messages", () => {
     expect(convertMessagesToInputItems([])).toEqual([]);
   });
+
+  it("strips pipe-delimited suffix from assistant tool call IDs", () => {
+    const msg = assistantMsg(
+      [],
+      [{ id: "call_LfY3urEtRi084Bpt2xnm9MjO|fc_07c5279abc", name: "exec", args: { cmd: "ls" } }],
+    );
+    const items = convertMessagesToInputItems([msg] as unknown as Parameters<
+      typeof convertMessagesToInputItems
+    >[0]);
+    const fcItem = items.find((i) => i.type === "function_call") as {
+      call_id: string;
+    };
+    expect(fcItem).toBeDefined();
+    expect(fcItem.call_id).toBe("call_LfY3urEtRi084Bpt2xnm9MjO");
+  });
+
+  it("strips pipe-delimited suffix from tool result toolCallId", () => {
+    const msg = toolResultMsg("call_abc123|fc_item456", "output text");
+    const items = convertMessagesToInputItems([msg] as Parameters<
+      typeof convertMessagesToInputItems
+    >[0]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "function_call_output",
+      call_id: "call_abc123",
+      output: "output text",
+    });
+  });
+
+  it("leaves non-pipe IDs unchanged", () => {
+    const msg = assistantMsg([], [{ id: "call_plain123", name: "exec", args: { cmd: "pwd" } }]);
+    const items = convertMessagesToInputItems([msg] as unknown as Parameters<
+      typeof convertMessagesToInputItems
+    >[0]);
+    const fcItem = items.find((i) => i.type === "function_call") as {
+      call_id: string;
+    };
+    expect(fcItem.call_id).toBe("call_plain123");
+  });
+
+  it("handles pipe-delimited IDs in a full multi-turn conversation", () => {
+    const pipeId = "call_xyz|fc_reasoning_item";
+    const messages: FakeMessage[] = [
+      userMsg("Run ls"),
+      assistantMsg([], [{ id: pipeId, name: "exec", args: { cmd: "ls" } }]),
+      toolResultMsg(pipeId, "file.txt"),
+    ];
+    const items = convertMessagesToInputItems(
+      messages as Parameters<typeof convertMessagesToInputItems>[0],
+    );
+    const fcItem = items.find((i) => i.type === "function_call") as {
+      call_id: string;
+    };
+    const outputItem = items.find((i) => i.type === "function_call_output") as {
+      call_id: string;
+    };
+    expect(fcItem.call_id).toBe("call_xyz");
+    expect(outputItem.call_id).toBe("call_xyz");
+  });
+
+  it("strips pipe-delimited suffix from toolUseId fallback", () => {
+    const msg = {
+      role: "toolResult" as const,
+      toolUseId: "call_use123|fc_item789",
+      toolName: "test_tool",
+      content: [{ type: "text", text: "ok" }],
+      isError: false,
+      timestamp: 0,
+    };
+    const items = convertMessagesToInputItems([msg] as unknown as Parameters<
+      typeof convertMessagesToInputItems
+    >[0]);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "function_call_output",
+      call_id: "call_use123",
+      output: "ok",
+    });
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
