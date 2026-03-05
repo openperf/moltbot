@@ -65,6 +65,7 @@ import { toClientToolDefinitions } from "../../pi-tool-definition-adapter.js";
 import { createOpenClawCodingTools, resolveToolLoopDetectionConfig } from "../../pi-tools.js";
 import { resolveSandboxContext } from "../../sandbox.js";
 import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
+import { decodeHtmlEntitiesInToolCallMessage, isXaiProvider } from "../../schema/clean-for-xai.js";
 import { repairSessionFileIfNeeded } from "../../session-file-repair.js";
 import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import { sanitizeToolUseResultPairing } from "../../session-transcript-repair.js";
@@ -418,6 +419,78 @@ export function wrapStreamFnTrimToolCallNames(
       );
     }
     return wrapStreamTrimToolCallNames(maybeStream, allowedToolNames);
+  };
+}
+
+// ── xAI HTML entity decoding ────────────────────────────────────────────────
+// xAI/Grok models HTML-entity-encode special characters inside tool_call
+// argument values (e.g. `&&` → `&amp;&amp;`, `"` → `&quot;`).  Decode them
+// on the response stream before tool dispatch so tools receive clean strings.
+
+function wrapStreamDecodeXaiHtmlEntities(
+  stream: ReturnType<typeof streamSimple>,
+): ReturnType<typeof streamSimple> {
+  // Track whether decoding has already been applied via the iterator path.
+  // The underlying stream shares a single output object across both the async
+  // iterator events and the value returned by `result()`.  HTML-entity
+  // decoding is *not* idempotent (e.g. `&amp;amp;` → `&amp;` → `&`), so we
+  // must ensure it runs at most once per message.
+  let resultDecoded = false;
+
+  const originalResult = stream.result.bind(stream);
+  stream.result = async () => {
+    const message = await originalResult();
+    if (!resultDecoded) {
+      decodeHtmlEntitiesInToolCallMessage(message);
+    }
+    return message;
+  };
+
+  const originalAsyncIterator = stream[Symbol.asyncIterator].bind(stream);
+  (stream as { [Symbol.asyncIterator]: typeof originalAsyncIterator })[Symbol.asyncIterator] =
+    function () {
+      const iterator = originalAsyncIterator();
+      return {
+        async next() {
+          const result = await iterator.next();
+          if (!result.done && result.value && typeof result.value === "object") {
+            const event = result.value as {
+              partial?: unknown;
+              message?: unknown;
+            };
+            // Always decode `partial` – during streaming deltas the
+            // provider regenerates `arguments` via `parseStreamingJson`
+            // on every chunk (a fresh object each time), so earlier
+            // decodes are overwritten and re-decoding is safe.
+            decodeHtmlEntitiesInToolCallMessage(event.partial);
+            // `message` is only present on the final "done" event and
+            // shares the same object reference as `result()`.  Once we
+            // decode it here, set the flag so `result()` won't repeat.
+            if (decodeHtmlEntitiesInToolCallMessage(event.message)) {
+              resultDecoded = true;
+            }
+          }
+          return result;
+        },
+        async return(value?: unknown) {
+          return iterator.return?.(value) ?? { done: true as const, value: undefined };
+        },
+        async throw(error?: unknown) {
+          return iterator.throw?.(error) ?? { done: true as const, value: undefined };
+        },
+      };
+    };
+
+  return stream;
+}
+
+export function wrapStreamFnDecodeXaiHtmlEntities(baseFn: StreamFn): StreamFn {
+  return (model, context, options) => {
+    const maybeStream = baseFn(model, context, options);
+    if (maybeStream && typeof maybeStream === "object" && "then" in maybeStream) {
+      return Promise.resolve(maybeStream).then((stream) => wrapStreamDecodeXaiHtmlEntities(stream));
+    }
+    return wrapStreamDecodeXaiHtmlEntities(maybeStream);
   };
 }
 
@@ -1157,6 +1230,15 @@ export async function runEmbeddedAttempt(
         activeSession.agent.streamFn,
         allowedToolNames,
       );
+
+      // xAI/Grok models HTML-entity-encode special characters inside tool_call
+      // argument values (e.g. `&&` → `&amp;&amp;`), breaking shell commands and
+      // other tools.  Decode entities on the response stream before dispatch.
+      if (isXaiProvider(params.provider, params.modelId)) {
+        activeSession.agent.streamFn = wrapStreamFnDecodeXaiHtmlEntities(
+          activeSession.agent.streamFn,
+        );
+      }
 
       if (anthropicPayloadLogger) {
         activeSession.agent.streamFn = anthropicPayloadLogger.wrapStreamFn(
