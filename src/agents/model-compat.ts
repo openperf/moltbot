@@ -20,6 +20,35 @@ function isOpenAINativeEndpoint(baseUrl: string): boolean {
   }
 }
 
+/**
+ * Returns true for providers that do NOT require the automatic "-chat" suffix
+ * appended by pi-ai's openai-completions adapter.
+ *
+ * Some providers like MiniMax use model IDs without the "-chat" suffix.
+ * When pi-ai automatically appends "-chat" to model IDs, it breaks compatibility
+ * with these providers.
+ *
+ * This function identifies providers that should have the automatic suffix
+ * disabled via the `disableAutoModelIdSuffix` compatibility flag.
+ */
+function shouldDisableAutoModelIdSuffix(baseUrl: string): boolean {
+  if (!baseUrl) {
+    return false;
+  }
+
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    // MiniMax API does not use "-chat" suffix in model IDs
+    if (host.includes("minimax")) {
+      return true;
+    }
+    // Add other providers here as needed
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function isAnthropicMessagesModel(model: Model<Api>): model is Model<"anthropic-messages"> {
   return model.api === "anthropic-messages";
 }
@@ -52,15 +81,35 @@ export function normalizeModelCompat(model: Model<Api>): Model<Api> {
     return model;
   }
 
+  const compat = model.compat ?? undefined;
+
+  // Disable automatic model ID suffix for providers that don't use it.
+  // For example, MiniMax uses model IDs like "abab6.5" without the "-chat" suffix.
+  // If we let pi-ai automatically append "-chat", it becomes "abab6.5-chat" which
+  // the MiniMax API rejects as an unknown model.
+  // This check runs before supportsDeveloperRole handling to ensure it applies
+  // even for models that already have supportsDeveloperRole: false configured.
+  if (shouldDisableAutoModelIdSuffix(baseUrl)) {
+    const newCompat = {
+      ...compat,
+      supportsDeveloperRole: false,
+      disableAutoModelIdSuffix: true,
+    };
+    return {
+      ...model,
+      compat: newCompat,
+    } as typeof model;
+  }
+
   // The `developer` message role is an OpenAI-native convention. All other
   // openai-completions backends (proxies, Qwen, GLM, DeepSeek, Kimi, etc.)
   // only recognise `system`. Force supportsDeveloperRole=false for any model
   // whose baseUrl is not a known native OpenAI endpoint, unless the caller
   // has already pinned the value explicitly.
-  const compat = model.compat ?? undefined;
   if (compat?.supportsDeveloperRole === false) {
     return model;
   }
+
   // When baseUrl is empty the pi-ai library defaults to api.openai.com, so
   // leave compat unchanged and let the existing default behaviour apply.
   // Note: an explicit supportsDeveloperRole: true is intentionally overridden
