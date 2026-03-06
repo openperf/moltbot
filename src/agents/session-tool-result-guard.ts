@@ -330,9 +330,10 @@ export function installSessionToolResultGuard(
 
     // Always clear pending tool call state before appending non-tool-result messages.
     // flushPendingToolResults() only inserts synthetic results when allowSyntheticToolResults
-    // is true; it always clears the pending map. Without this, providers that disable
-    // synthetic results (e.g. OpenAI) accumulate stale pending state when a user message
-    // interrupts in-flight tool calls, leaving orphaned tool_use blocks in the transcript
+    // is true; for full (non-selective) flushes it clears the entire pending map, while
+    // selective flushes only remove the specified IDs.  Without this, providers that
+    // disable synthetic results (e.g. OpenAI) accumulate stale pending state when a user
+    // message interrupts in-flight tool calls, leaving orphaned tool_use blocks in the transcript
     // that cause API 400 errors on subsequent requests.
     //
     // Grace-window behavior: compute expired IDs once using a single timestamp to
