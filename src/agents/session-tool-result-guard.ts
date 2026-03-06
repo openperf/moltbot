@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { SessionManager } from "@mariozechner/pi-coding-agent";
 import type {
@@ -16,6 +18,14 @@ import { extractToolCallsFromAssistant, extractToolResultId } from "./tool-call-
 const GUARD_TRUNCATION_SUFFIX =
   "\n\n⚠️ [Content truncated during persistence — original exceeded size limit. " +
   "Use offset/limit parameters or request specific sections for large content.]";
+
+type PendingToolCallRecord = { id: string; name?: string; createdAtMs: number };
+
+type PendingToolCallFile = {
+  version: 1;
+  updatedAtMs: number;
+  items: PendingToolCallRecord[];
+};
 
 /**
  * Truncate oversized text content blocks in a tool result message.
@@ -72,6 +82,12 @@ export function installSessionToolResultGuard(
   sessionManager: SessionManager,
   opts?: {
     /**
+     * Grace window (ms) before inserting synthetic tool results for pending
+     * tool calls.  Prevents premature synthetic inserts during restart or
+     * long-poll ordering jitter.  Defaults to 30 000 ms (30 s).
+     */
+    pendingToolResultGraceMs?: number;
+    /**
      * Optional transform applied to any message before persistence.
      */
     transformMessageForPersistence?: (message: AgentMessage) => AgentMessage;
@@ -109,6 +125,56 @@ export function installSessionToolResultGuard(
 } {
   const originalAppend = sessionManager.appendMessage.bind(sessionManager);
   const pendingState = createPendingToolCallState();
+
+  // ---------------------------------------------------------------------------
+  // Pending tool-call persistence across restarts
+  // ---------------------------------------------------------------------------
+  const sessionFile = (
+    sessionManager as { getSessionFile?: () => string | null }
+  ).getSessionFile?.();
+  const pendingFile = sessionFile ? `${sessionFile}.pending-tool-calls.json` : null;
+
+  const loadPendingState = () => {
+    if (!pendingFile) {
+      return;
+    }
+    try {
+      const raw = readFileSync(pendingFile, "utf8");
+      const parsed = JSON.parse(raw) as PendingToolCallFile;
+      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.items)) {
+        return;
+      }
+      pendingState.restore(parsed.items);
+    } catch {
+      // File may not exist or be corrupt — best-effort only.
+    }
+  };
+
+  const savePendingState = () => {
+    if (!pendingFile) {
+      return;
+    }
+    const items = pendingState.snapshot();
+    try {
+      if (items.length === 0) {
+        rmSync(pendingFile, { force: true });
+        return;
+      }
+      mkdirSync(dirname(pendingFile), { recursive: true });
+      const payload: PendingToolCallFile = {
+        version: 1,
+        updatedAtMs: Date.now(),
+        items,
+      };
+      writeFileSync(pendingFile, `${JSON.stringify(payload)}\n`, "utf8");
+    } catch {
+      // Best-effort only — do not crash the gateway for persistence failures.
+    }
+  };
+
+  // Restore any pending tool calls that survived a gateway restart.
+  loadPendingState();
+
   const persistMessage = (message: AgentMessage) => {
     const transformer = opts?.transformMessageForPersistence;
     return transformer ? transformer(message) : message;
@@ -124,6 +190,7 @@ export function installSessionToolResultGuard(
 
   const allowSyntheticToolResults = opts?.allowSyntheticToolResults ?? true;
   const beforeWrite = opts?.beforeMessageWriteHook;
+  const pendingToolResultGraceMs = Math.max(0, opts?.pendingToolResultGraceMs ?? 30_000);
 
   /**
    * Run the before_message_write hook. Returns the (possibly modified) message,
@@ -143,12 +210,25 @@ export function installSessionToolResultGuard(
     return msg;
   };
 
-  const flushPendingToolResults = () => {
+  const flushPendingToolResults = (
+    reason:
+      | "ttl_expired"
+      | "sanitized_drop"
+      | "new_tool_calls"
+      | "explicit_finalize" = "explicit_finalize",
+    ids?: string[],
+  ) => {
     if (pendingState.size() === 0) {
       return;
     }
+
+    const isSelectiveFlush = ids != null && ids.length > 0;
+    const targetIds = isSelectiveFlush ? ids : pendingState.getPendingIds();
     if (allowSyntheticToolResults) {
-      for (const [id, name] of pendingState.entries()) {
+      for (const id of targetIds) {
+        const name = pendingState.getToolName(id);
+        const createdAtMs = pendingState.getCreatedAtMs(id);
+        const ageMs = typeof createdAtMs === "number" ? Date.now() - createdAtMs : undefined;
         const synthetic = makeMissingToolResult({ toolCallId: id, toolName: name });
         const flushed = applyBeforeWriteHook(
           persistToolResult(persistMessage(synthetic), {
@@ -160,13 +240,39 @@ export function installSessionToolResultGuard(
         if (flushed) {
           originalAppend(flushed as never);
         }
+        // Structured telemetry for every synthetic insertion path.
+        const blocked = !flushed;
+        console.warn(
+          JSON.stringify({
+            subsystem: "agents/transcript-guard",
+            event: "synthetic_tool_result_attempted",
+            reason,
+            toolCallId: id,
+            toolName: name,
+            ageMs,
+            blocked,
+          }),
+        );
+        pendingState.delete(id);
+      }
+    } else {
+      for (const id of targetIds) {
+        pendingState.delete(id);
       }
     }
-    pendingState.clear();
+    // Only clear remaining entries when doing a full flush (no specific ids targeted).
+    // For selective flushes (e.g., ttl_expired with only expired IDs), non-expired
+    // entries must remain pending so they can still receive real results or be flushed
+    // once their own grace window expires.
+    if (!isSelectiveFlush) {
+      pendingState.clear();
+    }
+    savePendingState();
   };
 
   const clearPendingToolResults = () => {
     pendingState.clear();
+    savePendingState();
   };
 
   const guardedAppend = (message: AgentMessage) => {
@@ -178,7 +284,7 @@ export function installSessionToolResultGuard(
       });
       if (sanitized.length === 0) {
         if (pendingState.shouldFlushForSanitizedDrop()) {
-          flushPendingToolResults();
+          flushPendingToolResults("sanitized_drop");
         }
         return undefined;
       }
@@ -191,6 +297,7 @@ export function installSessionToolResultGuard(
       const toolName = id ? pendingState.getToolName(id) : undefined;
       if (id) {
         pendingState.delete(id);
+        savePendingState();
       }
       const normalizedToolResult = normalizePersistedToolResultName(nextMessage, toolName);
       // Apply hard size cap before persistence to prevent oversized tool results
@@ -227,12 +334,20 @@ export function installSessionToolResultGuard(
     // synthetic results (e.g. OpenAI) accumulate stale pending state when a user message
     // interrupts in-flight tool calls, leaving orphaned tool_use blocks in the transcript
     // that cause API 400 errors on subsequent requests.
-    if (pendingState.shouldFlushBeforeNonToolResult(nextRole, toolCalls.length)) {
-      flushPendingToolResults();
+    //
+    // Grace-window behavior: compute expired IDs once using a single timestamp to
+    // avoid redundant iteration and inconsistent Date.now() snapshots.
+    const nowMs = Date.now();
+    const expiredIds = pendingState.getExpiredIds(pendingToolResultGraceMs, nowMs);
+    const isNonToolFlow =
+      (toolCalls.length === 0 || nextRole !== "assistant") && pendingState.size() > 0;
+    if (isNonToolFlow && expiredIds.length > 0) {
+      flushPendingToolResults("ttl_expired", expiredIds);
     }
+
     // If new tool calls arrive while older ones are pending, flush the old ones first.
     if (pendingState.shouldFlushBeforeNewToolCalls(toolCalls.length)) {
-      flushPendingToolResults();
+      flushPendingToolResults("new_tool_calls");
     }
 
     const finalMessage = applyBeforeWriteHook(persistMessage(nextMessage));
@@ -241,15 +356,16 @@ export function installSessionToolResultGuard(
     }
     const result = originalAppend(finalMessage as never);
 
-    const sessionFile = (
+    const emitSessionFile = (
       sessionManager as { getSessionFile?: () => string | null }
     ).getSessionFile?.();
-    if (sessionFile) {
-      emitSessionTranscriptUpdate(sessionFile);
+    if (emitSessionFile) {
+      emitSessionTranscriptUpdate(emitSessionFile);
     }
 
     if (toolCalls.length > 0) {
       pendingState.trackToolCalls(toolCalls);
+      savePendingState();
     }
 
     return result;

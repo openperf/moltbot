@@ -1,40 +1,85 @@
 export type PendingToolCall = { id: string; name?: string };
 
+type PendingToolCallMeta = {
+  name?: string;
+  createdAtMs: number;
+};
+
 export type PendingToolCallState = {
   size: () => number;
-  entries: () => IterableIterator<[string, string | undefined]>;
+  snapshot: () => Array<{ id: string; name?: string; createdAtMs: number }>;
+  restore: (items: Array<{ id: string; name?: string; createdAtMs: number }>) => void;
   getToolName: (id: string) => string | undefined;
+  getCreatedAtMs: (id: string) => number | undefined;
   delete: (id: string) => void;
   clear: () => void;
-  trackToolCalls: (calls: PendingToolCall[]) => void;
+  trackToolCalls: (calls: PendingToolCall[], nowMs?: number) => void;
   getPendingIds: () => string[];
+  /**
+   * Return IDs of pending tool calls whose age exceeds `ttlMs`.
+   * Uses a single `nowMs` timestamp to avoid inconsistencies from multiple
+   * `Date.now()` calls within the same flush cycle.
+   */
+  getExpiredIds: (ttlMs: number, nowMs?: number) => string[];
   shouldFlushForSanitizedDrop: () => boolean;
-  shouldFlushBeforeNonToolResult: (nextRole: unknown, toolCallCount: number) => boolean;
   shouldFlushBeforeNewToolCalls: (toolCallCount: number) => boolean;
 };
 
 export function createPendingToolCallState(): PendingToolCallState {
-  const pending = new Map<string, string | undefined>();
+  const pending = new Map<string, PendingToolCallMeta>();
 
   return {
     size: () => pending.size,
-    entries: () => pending.entries(),
-    getToolName: (id: string) => pending.get(id),
+
+    snapshot: () =>
+      Array.from(pending.entries()).map(([id, meta]) => ({
+        id,
+        name: meta.name,
+        createdAtMs: meta.createdAtMs,
+      })),
+
+    restore: (items: Array<{ id: string; name?: string; createdAtMs: number }>) => {
+      pending.clear();
+      for (const item of items) {
+        if (!item?.id || typeof item.createdAtMs !== "number") {
+          continue;
+        }
+        pending.set(item.id, { name: item.name, createdAtMs: item.createdAtMs });
+      }
+    },
+
+    getToolName: (id: string) => pending.get(id)?.name,
+
+    getCreatedAtMs: (id: string) => pending.get(id)?.createdAtMs,
+
     delete: (id: string) => {
       pending.delete(id);
     },
+
     clear: () => {
       pending.clear();
     },
-    trackToolCalls: (calls: PendingToolCall[]) => {
+
+    trackToolCalls: (calls: PendingToolCall[], nowMs = Date.now()) => {
       for (const call of calls) {
-        pending.set(call.id, call.name);
+        pending.set(call.id, { name: call.name, createdAtMs: nowMs });
       }
     },
+
     getPendingIds: () => Array.from(pending.keys()),
+
+    getExpiredIds: (ttlMs: number, nowMs = Date.now()) => {
+      const expired: string[] = [];
+      for (const [id, meta] of pending.entries()) {
+        if (nowMs - meta.createdAtMs >= ttlMs) {
+          expired.push(id);
+        }
+      }
+      return expired;
+    },
+
     shouldFlushForSanitizedDrop: () => pending.size > 0,
-    shouldFlushBeforeNonToolResult: (nextRole: unknown, toolCallCount: number) =>
-      pending.size > 0 && (toolCallCount === 0 || nextRole !== "assistant"),
+
     shouldFlushBeforeNewToolCalls: (toolCallCount: number) => pending.size > 0 && toolCallCount > 0,
   };
 }
