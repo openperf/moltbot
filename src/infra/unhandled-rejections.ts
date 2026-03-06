@@ -60,6 +60,14 @@ const TRANSIENT_NETWORK_MESSAGE_SNIPPETS = [
   "temporary failure in name resolution",
 ];
 
+// Tail-anchored pattern for "fetch failed" messages.  Using a `$` anchor
+// instead of a plain substring avoids false-positive matches on unrelated
+// errors such as "Web fetch failed (404)" or "Firecrawl fetch failed (200)".
+// Matches both the exact undici `TypeError("fetch failed")` and wrapped
+// variants like "Failed to get gateway information from Discord: fetch failed"
+// produced by @buape/carbon's GatewayPlugin.  See #37375.
+const FETCH_FAILED_TAIL_RE = /fetch failed$/i;
+
 function getErrorCause(err: unknown): unknown {
   if (!err || typeof err !== "object") {
     return undefined;
@@ -169,7 +177,7 @@ export function isTransientNetworkError(err: unknown): boolean {
     if (TRANSIENT_NETWORK_MESSAGE_CODE_RE.test(message)) {
       return true;
     }
-    if (message === "fetch failed") {
+    if (FETCH_FAILED_TAIL_RE.test(message)) {
       return true;
     }
     if (TRANSIENT_NETWORK_MESSAGE_SNIPPETS.some((snippet) => message.includes(snippet))) {

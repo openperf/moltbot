@@ -116,6 +116,21 @@ describe("isTransientNetworkError", () => {
     expect(isTransientNetworkError(error)).toBe(true);
   });
 
+  it("returns true for wrapped 'fetch failed' without cause chain (GatewayPlugin pattern)", () => {
+    // @buape/carbon GatewayPlugin re-throws the original TypeError as a plain
+    // Error with a prefixed message and no cause chain.  See #37375.
+    const error = new Error("Failed to get gateway information from Discord: fetch failed");
+    expect(isTransientNetworkError(error)).toBe(true);
+  });
+
+  it("returns true for wrapped 'fetch failed' with cause chain preserved", () => {
+    const cause = new TypeError("fetch failed");
+    const error = new Error("Failed to get gateway information from Discord: fetch failed", {
+      cause,
+    });
+    expect(isTransientNetworkError(error)).toBe(true);
+  });
+
   it("returns true for AggregateError containing network errors", () => {
     const networkError = Object.assign(new Error("timeout"), { code: "ETIMEDOUT" });
     const error = new AggregateError([networkError], "Multiple errors");
@@ -155,5 +170,14 @@ describe("isTransientNetworkError", () => {
   it("returns false for AggregateError with only non-network errors", () => {
     const error = new AggregateError([new Error("regular error")], "Multiple errors");
     expect(isTransientNetworkError(error)).toBe(false);
+  });
+
+  it('returns false for application-level errors containing "fetch failed" mid-message', () => {
+    // These are NOT network errors — they are HTTP-level or app-level failures
+    // that happen to include the phrase "fetch failed" before additional context.
+    expect(isTransientNetworkError(new Error("Web fetch failed (404): Not Found"))).toBe(false);
+    expect(isTransientNetworkError(new Error("Firecrawl fetch failed (200): empty body"))).toBe(
+      false,
+    );
   });
 });
