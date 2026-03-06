@@ -2,8 +2,21 @@ export function parseTelegramReplyToMessageId(replyToId?: string | null): number
   if (!replyToId) {
     return undefined;
   }
-  const parsed = Number.parseInt(replyToId, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  const trimmed = replyToId.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  // Strict: entire string must be digits (no leading sign, no trailing garbage).
+  // parseInt is permissive ("123abc" → 123), so pre-validate with regex.
+  if (!/^\d+$/.test(trimmed)) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(trimmed, 10);
+  // Telegram message IDs are always positive integers.
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return parsed;
 }
 
 function parseIntegerId(value: string): number | undefined {

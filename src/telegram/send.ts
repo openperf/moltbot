@@ -279,13 +279,18 @@ function buildTelegramThreadReplyParams(params: {
 
   if (params.replyToMessageId != null) {
     const replyToMessageId = Math.trunc(params.replyToMessageId);
-    if (params.quoteText?.trim()) {
-      threadParams.reply_parameters = {
-        message_id: replyToMessageId,
-        quote: params.quoteText.trim(),
-      };
-    } else {
-      threadParams.reply_to_message_id = replyToMessageId;
+    // Guard: only attach reply threading when the id is a finite positive integer.
+    // Non-numeric or non-positive values (e.g. NaN from cross-surface UUID cast)
+    // would cause Telegram API 400 "message to be replied not found".
+    if (Number.isFinite(replyToMessageId) && replyToMessageId > 0) {
+      if (params.quoteText?.trim()) {
+        threadParams.reply_parameters = {
+          message_id: replyToMessageId,
+          quote: params.quoteText.trim(),
+        };
+      } else {
+        threadParams.reply_to_message_id = replyToMessageId;
+      }
     }
   }
   return threadParams;

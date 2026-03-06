@@ -139,4 +139,40 @@ describe("telegramOutbound", () => {
     expect(secondCallOpts?.buttons).toBeUndefined();
     expect(result).toEqual({ channel: "telegram", messageId: "tg-2", chatId: "123" });
   });
+
+  it("drops replyToMessageId for non-numeric replyToId values", async () => {
+    const sendTelegram = vi.fn().mockResolvedValue({ messageId: "tg-text-3", chatId: "123" });
+    const sendText = telegramOutbound.sendText;
+    expect(sendText).toBeDefined();
+
+    // UUID-like value from cross-surface routing
+    await sendText!({
+      cfg: {},
+      to: "123",
+      text: "hello",
+      replyToId: "35ce3628-8ceb-45a6-8092-c021c7e5bd53",
+      deps: { sendTelegram },
+    });
+
+    const opts = sendTelegram.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(opts?.replyToMessageId).toBeUndefined();
+  });
+
+  it("drops replyToMessageId for partially numeric replyToId values", async () => {
+    const sendTelegram = vi.fn().mockResolvedValue({ messageId: "tg-text-4", chatId: "123" });
+    const sendText = telegramOutbound.sendText;
+    expect(sendText).toBeDefined();
+
+    // Partially numeric value that parseInt would accept as 123
+    await sendText!({
+      cfg: {},
+      to: "123",
+      text: "hello",
+      replyToId: "123abc",
+      deps: { sendTelegram },
+    });
+
+    const opts = sendTelegram.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(opts?.replyToMessageId).toBeUndefined();
+  });
 });
