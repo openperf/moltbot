@@ -206,15 +206,45 @@ describe("browser client auth object construction", () => {
     });
   });
 
-  describe("auth.deviceToken field presence", () => {
-    it("always includes deviceToken key in auth object (even when undefined)", () => {
+  describe("serialized auth over the wire", () => {
+    it("preserves deviceToken in JSON when device token is the only credential", () => {
+      const auth = buildBrowserConnectAuth({
+        explicitGatewayToken: undefined,
+        password: undefined,
+        storedDeviceToken: "device-jwt-abc",
+      });
+      // Validate the serialized frame that is actually sent via JSON.stringify,
+      // since undefined values are dropped during serialization.
+      const wire = JSON.parse(JSON.stringify(auth));
+      expect(wire).toHaveProperty("deviceToken", "device-jwt-abc");
+    });
+
+    it("serialized auth matches between browser and Node.js clients", () => {
+      const browserAuth = buildBrowserConnectAuth({
+        explicitGatewayToken: undefined,
+        password: undefined,
+        storedDeviceToken: "device-jwt-abc",
+      });
+      const nodeAuth = buildNodeConnectAuth({
+        explicitGatewayToken: undefined,
+        explicitDeviceToken: undefined,
+        password: undefined,
+        storedDeviceToken: "device-jwt-abc",
+      });
+      expect(JSON.parse(JSON.stringify(browserAuth))).toEqual(JSON.parse(JSON.stringify(nodeAuth)));
+    });
+
+    it("omits deviceToken from wire when suppressed by shared token", () => {
       const auth = buildBrowserConnectAuth({
         explicitGatewayToken: "shared-secret-123",
         password: undefined,
-        storedDeviceToken: undefined,
+        storedDeviceToken: "device-jwt-abc",
       });
-      expect(auth).toBeDefined();
-      expect("deviceToken" in auth!).toBe(true);
+      // When deviceToken is undefined, JSON.stringify drops it — this is expected
+      // and matches the Node.js client behavior.
+      const wire = JSON.parse(JSON.stringify(auth));
+      expect(wire).not.toHaveProperty("deviceToken");
+      expect(wire).toHaveProperty("token", "shared-secret-123");
     });
   });
 });
