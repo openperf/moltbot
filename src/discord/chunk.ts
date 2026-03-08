@@ -24,18 +24,31 @@ const DEFAULT_MAX_LINES = 17;
 const FENCE_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
 
 /**
- * Regex matching CJK punctuation marks that serve as natural sentence or
- * clause boundaries.  Splitting at these positions keeps CJK text readable
- * because they are equivalent to periods, commas, exclamation marks, etc.
+ * Regex matching CJK terminal/closing punctuation marks that serve as
+ * natural sentence or clause boundaries.  Splitting *after* these positions
+ * keeps CJK text readable because they are equivalent to periods, commas,
+ * exclamation marks, closing brackets, etc.
  *
- * Included ranges:
- *   U+3000-U+303F  CJK Symbols and Punctuation (。、〃〈〉《》「」『』【】〔〕〖〗…)
- *   U+FF01-U+FF0F  Fullwidth ASCII variants (！＂＃＄％＆＇（）＊＋，－．／)
- *   U+FF1A-U+FF1F  Fullwidth colon–question mark (：；＜＝＞？)
- *   U+FF3B-U+FF3D  Fullwidth brackets (［＼］)
- *   U+FF5B-U+FF65  Fullwidth braces and halfwidth Katakana punctuation
+ * Only terminal and closing characters are included — opening delimiters
+ * (〈《「『【〔〖) are intentionally excluded because splitting after an
+ * opening bracket would strand it at the end of a chunk.
+ * U+3000 (IDEOGRAPHIC SPACE) is also excluded since ECMAScript's \s already
+ * matches it in the whitespace check that runs first.
+ *
+ * Included characters:
+ *   U+3001-U+3002  Ideographic comma/period (、。)
+ *   U+3009,U+300B,U+300D,U+300F,U+3011  Closing brackets (〉》」』】)
+ *   U+3015,U+3017,U+3019,U+301B  Closing brackets (〕〗〙〛)
+ *   U+301E-U+301F  Closing quotation marks
+ *   U+FF01,U+FF0C,U+FF0E  Fullwidth ! , . (！，．)
+ *   U+FF1A,U+FF1B,U+FF1F  Fullwidth : ; ? (：；？)
+ *   U+FF3D  Fullwidth ] (］)
+ *   U+FF5D  Fullwidth } (｝)
+ *   U+FF60-U+FF61  Fullwidth/halfwidth closing paren and period
+ *   U+FF63-U+FF65  Halfwidth closing bracket and Katakana punctuation
  */
-const CJK_PUNCTUATION_RE = /[\u3000-\u303F\uFF01-\uFF0F\uFF1A-\uFF1F\uFF3B-\uFF3D\uFF5B-\uFF65]/;
+const CJK_PUNCTUATION_RE =
+  /[\u3001\u3002\u3009\u300B\u300D\u300F\u3011\u3015\u3017\u3019\u301B\u301E\u301F\uFF01\uFF0C\uFF0E\uFF1A\uFF1B\uFF1F\uFF3D\uFF5D\uFF60\uFF61\uFF63\uFF64\uFF65]/;
 
 /**
  * Regex matching CJK ideograph characters.  CJK text has no word-separating
@@ -130,6 +143,11 @@ function findBreakIndex(window: string): number {
       if (i + 1 > window.length * 0.2) {
         cjkCharIdx = i + 1;
       }
+    }
+    // Once both CJK candidates are found, no need to continue scanning —
+    // remaining iterations would only re-check already-set indices.
+    if (cjkPunctuationIdx >= 0 && cjkCharIdx >= 0) {
+      break;
     }
   }
 
