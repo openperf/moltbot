@@ -253,13 +253,14 @@ export class GatewayClient {
     const storedToken = this.opts.deviceIdentity
       ? loadDeviceAuthToken({ deviceId: this.opts.deviceIdentity.deviceId, role })?.token
       : null;
-    // Keep shared gateway credentials explicit. Persisted per-device tokens only
-    // participate when no explicit shared token/password is provided.
-    const resolvedDeviceToken =
-      explicitDeviceToken ??
-      (!(explicitGatewayToken || this.opts.password?.trim())
-        ? (storedToken ?? undefined)
-        : undefined);
+    // Always resolve the device token independently of shared credentials.
+    // The gateway server already supports deviceToken fallback when the
+    // shared token/password is absent or invalid (see server auth matrix
+    // test "uses explicit auth.deviceToken fallback when shared token is
+    // wrong").  Suppressing the stored token here caused Control-UI
+    // reconnects to fail with "device identity required" after SPA
+    // navigation dropped the shared token from the URL hash (#39611).
+    const resolvedDeviceToken = explicitDeviceToken ?? storedToken ?? undefined;
     // Legacy compatibility: keep `auth.token` populated for device-token auth when
     // no explicit shared token is present.
     const authToken = explicitGatewayToken ?? resolvedDeviceToken;
