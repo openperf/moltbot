@@ -252,4 +252,21 @@ describe("chunkDiscordText — CJK text splitting", () => {
     }
     expect(chunks.join("")).toBe(text);
   });
+
+  it("avoids splitting at first CJK char before long ASCII token", () => {
+    // A short CJK prefix followed by a long ASCII token (e.g., URL) without spaces.
+    // If we split at the CJK char, we get a tiny chunk ("你").
+    // We should instead hard-split the ASCII token to maintain reasonable chunk sizes.
+    const url = "https://example.com/very/long/path/that/exceeds/the/limit/without/any/spaces";
+    const text = `你${url}`;
+
+    // Set maxChars such that the URL exceeds it
+    const chunks = chunkDiscordText(text, { maxChars: 30, maxLines: 50 });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    // The first chunk should be substantial (hard split at 30), not just "你"
+    expect(chunks[0].length).toBe(30);
+    expect(chunks[0]).toBe(`你${url.slice(0, 29)}`);
+    expect(chunks.join("")).toBe(text);
+  });
 });

@@ -121,7 +121,11 @@ function findBreakIndex(window: string): number {
     }
     if (cjkCharIdx < 0 && CJK_CHAR_RE.test(ch)) {
       // Split *after* the CJK character so it stays with the current chunk.
-      cjkCharIdx = i + 1;
+      // Only accept it if it provides reasonable progress (e.g., > 20% of window)
+      // to avoid splitting right before a long ASCII token (like a URL).
+      if (i + 1 > window.length * 0.2) {
+        cjkCharIdx = i + 1;
+      }
     }
   }
 
