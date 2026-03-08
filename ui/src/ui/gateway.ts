@@ -307,7 +307,13 @@ export class GatewayBrowserClient {
         } else {
           this.pendingConnectError = undefined;
         }
-        if (canFallbackToShared && deviceIdentity) {
+        // Only purge cached device token on gateway-level auth rejections.
+        // Transient errors (network timeouts, socket resets) should not
+        // erase a valid device token — otherwise a temporary failure while
+        // the shared URL token is still present would wipe the fallback
+        // credential, causing "device identity required" on the next
+        // reconnect after the URL hash is stripped (#39611).
+        if (canFallbackToShared && deviceIdentity && err instanceof GatewayRequestError) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
