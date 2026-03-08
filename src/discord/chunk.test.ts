@@ -284,4 +284,22 @@ describe("chunkDiscordText — CJK text splitting", () => {
     expect(chunks[0].length).toBe(30);
     expect(chunks.join("")).toBe(text);
   });
+
+  it("accepts CJK punctuation at the very end of the window", () => {
+    // When a CJK punctuation mark lands exactly at the window boundary
+    // (i.e., the last character of the window), we should still split
+    // after it rather than falling back to a less ideal break point.
+    // Build a string where the 20th character is a period and text continues.
+    const before = "这是一段测试文本用来验证边界情况的处理。"; // 19 chars + 。 = 20 chars
+    const after = "后续的文本内容应该出现在第二个分块中";
+    const text = before + after;
+
+    const chunks = chunkDiscordText(text, { maxChars: 20, maxLines: 50 });
+
+    expect(chunks.length).toBe(2);
+    // The first chunk should include the punctuation mark.
+    expect(chunks[0]).toBe(before);
+    // The second chunk should start with the text after the punctuation.
+    expect(chunks[1]).toBe(after);
+  });
 });

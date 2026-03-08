@@ -156,10 +156,12 @@ function findBreakIndex(window: string): number {
     return whitespaceIdx;
   }
   // Split after the punctuation mark so it stays with the preceding clause.
-  if (cjkPunctuationIdx > 0 && cjkPunctuationIdx + 1 < window.length) {
+  // Use <= so that punctuation at the very end of the window is still accepted
+  // (consuming the entire window is valid — it just means no leftover).
+  if (cjkPunctuationIdx > 0 && cjkPunctuationIdx + 1 <= window.length) {
     return cjkPunctuationIdx + 1;
   }
-  if (cjkCharIdx > 0 && cjkCharIdx < window.length) {
+  if (cjkCharIdx > 0 && cjkCharIdx <= window.length) {
     return cjkCharIdx;
   }
   return -1;
