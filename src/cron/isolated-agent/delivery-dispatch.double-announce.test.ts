@@ -215,10 +215,12 @@ describe("dispatchCronDelivery — double-announce guard", () => {
         channel: "telegram",
         to: "123456",
         payloads: [{ text: "Detailed child result, everything finished successfully." }],
-        // Text delivery goes through finalizeTextDelivery which uses
-        // retryTransient: true, so skipQueue must be set.
-        skipQueue: true,
       }),
+    );
+    // The initial attempt preserves the write-ahead queue for crash-recovery;
+    // skipQueue is only set on retry attempts.
+    expect(deliverOutboundPayloads).not.toHaveBeenCalledWith(
+      expect.objectContaining({ skipQueue: true }),
     );
   });
 
@@ -308,7 +310,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     expect(state.deliveryAttempted).toBe(false);
   });
 
-  it("text delivery (retryTransient path) passes skipQueue=true to avoid duplicate queue entries", async () => {
+  it("text delivery initial attempt preserves write-ahead queue for crash-recovery", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
     vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
@@ -320,18 +322,19 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     expect(state.deliveryAttempted).toBe(true);
     expect(deliverOutboundPayloads).toHaveBeenCalledTimes(1);
 
-    // Text delivery goes through finalizeTextDelivery → deliverViaDirect with
-    // retryTransient: true.  skipQueue must be set so transient retries inside
-    // retryTransientDirectCronDelivery do not enqueue additional write-ahead
-    // entries that would cause duplicate sends.
+    // The first attempt through retryTransientDirectCronDelivery should NOT
+    // set skipQueue, so recoverPendingDeliveries can replay after a crash.
+    // Only subsequent retry attempts skip the queue to prevent duplicates.
     // See: https://github.com/openclaw/openclaw/issues/40545
     expect(deliverOutboundPayloads).toHaveBeenCalledWith(
       expect.objectContaining({
         channel: "telegram",
         to: "123456",
-        skipQueue: true,
         payloads: [{ text: "Daily digest ready." }],
       }),
+    );
+    expect(deliverOutboundPayloads).not.toHaveBeenCalledWith(
+      expect.objectContaining({ skipQueue: true }),
     );
   });
 
@@ -353,7 +356,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     );
   });
 
-  it("transient retry delivers exactly once after initial transient failure", async () => {
+  it("transient retry delivers exactly once: initial keeps queue, retry skips queue", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
 
@@ -373,10 +376,11 @@ describe("dispatchCronDelivery — double-announce guard", () => {
       // Two calls total: first failed transiently, second succeeded.
       expect(deliverOutboundPayloads).toHaveBeenCalledTimes(2);
 
-      // Both calls must use skipQueue to prevent duplicate queue entries.
-      for (const call of vi.mocked(deliverOutboundPayloads).mock.calls) {
-        expect(call[0]).toEqual(expect.objectContaining({ skipQueue: true }));
-      }
+      const calls = vi.mocked(deliverOutboundPayloads).mock.calls;
+      // First attempt: queue preserved for crash-recovery (no skipQueue).
+      expect(calls[0][0]).toEqual(expect.not.objectContaining({ skipQueue: true }));
+      // Retry attempt: queue skipped to prevent duplicate sends.
+      expect(calls[1][0]).toEqual(expect.objectContaining({ skipQueue: true }));
     } finally {
       delete process.env.OPENCLAW_TEST_FAST;
     }
