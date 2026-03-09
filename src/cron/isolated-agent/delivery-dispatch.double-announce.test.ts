@@ -215,6 +215,9 @@ describe("dispatchCronDelivery — double-announce guard", () => {
         channel: "telegram",
         to: "123456",
         payloads: [{ text: "Detailed child result, everything finished successfully." }],
+        // Text delivery goes through finalizeTextDelivery which uses
+        // retryTransient: true, so skipQueue must be set.
+        skipQueue: true,
       }),
     );
   });
@@ -305,7 +308,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     expect(state.deliveryAttempted).toBe(false);
   });
 
-  it("direct delivery passes skipQueue=true to avoid duplicate queue entries on transient retry", async () => {
+  it("text delivery (retryTransient path) passes skipQueue=true to avoid duplicate queue entries", async () => {
     vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
     vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
     vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
@@ -317,7 +320,8 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     expect(state.deliveryAttempted).toBe(true);
     expect(deliverOutboundPayloads).toHaveBeenCalledTimes(1);
 
-    // The call must include skipQueue: true so transient retries inside
+    // Text delivery goes through finalizeTextDelivery → deliverViaDirect with
+    // retryTransient: true.  skipQueue must be set so transient retries inside
     // retryTransientDirectCronDelivery do not enqueue additional write-ahead
     // entries that would cause duplicate sends.
     // See: https://github.com/openclaw/openclaw/issues/40545
@@ -328,6 +332,24 @@ describe("dispatchCronDelivery — double-announce guard", () => {
         skipQueue: true,
         payloads: [{ text: "Daily digest ready." }],
       }),
+    );
+  });
+
+  it("structured/thread delivery (non-retryTransient path) keeps write-ahead queue", async () => {
+    vi.mocked(countActiveDescendantRuns).mockReturnValue(0);
+    vi.mocked(isLikelyInterimCronMessage).mockReturnValue(false);
+    vi.mocked(deliverOutboundPayloads).mockResolvedValue([{ ok: true } as never]);
+
+    const params = makeBaseParams({ synthesizedText: "Report attached." });
+    // Simulate structured content so useDirectDelivery path is taken (no retryTransient)
+    (params as Record<string, unknown>).deliveryPayloadHasStructuredContent = true;
+    await dispatchCronDelivery(params);
+
+    expect(deliverOutboundPayloads).toHaveBeenCalledTimes(1);
+    // Non-retrying path should NOT set skipQueue, preserving crash-recovery
+    // via recoverPendingDeliveries.
+    expect(deliverOutboundPayloads).toHaveBeenCalledWith(
+      expect.not.objectContaining({ skipQueue: true }),
     );
   });
 

@@ -243,7 +243,7 @@ export async function dispatchCronDelivery(
         agentId: params.agentId,
         sessionKey: params.agentSessionKey,
       });
-      const runDelivery = async () =>
+      const runDelivery = async (skipQueue?: boolean) =>
         await deliverOutboundPayloads({
           cfg: params.cfgWithAgentDefaults,
           channel: delivery.channel,
@@ -256,19 +256,21 @@ export async function dispatchCronDelivery(
           bestEffort: params.deliveryBestEffort,
           deps: createOutboundSendDeps(params.deps),
           abortSignal: params.abortSignal,
-          // Skip the write-ahead delivery queue for cron direct delivery.
-          // retryTransientDirectCronDelivery already handles transient retries;
-          // without skipQueue each retry attempt enqueues a *new* queue entry,
-          // causing duplicate sends when the first attempt actually succeeded
-          // but threw a transient error (e.g. gateway timeout / econnreset).
+          // Skip the write-ahead delivery queue only when retrying transient
+          // errors.  retryTransientDirectCronDelivery already provides
+          // resilience; without skipQueue each retry attempt enqueues a *new*
+          // queue entry, causing duplicate sends when the first attempt
+          // actually succeeded but threw a transient error (e.g. gateway
+          // timeout / econnreset).  Non-retrying callers keep the queue so
+          // recoverPendingDeliveries can replay after a crash.
           // See: https://github.com/openclaw/openclaw/issues/40545
-          skipQueue: true,
+          ...(skipQueue ? { skipQueue: true } : {}),
         });
       const deliveryResults = options?.retryTransient
         ? await retryTransientDirectCronDelivery({
             jobId: params.job.id,
             signal: params.abortSignal,
-            run: runDelivery,
+            run: () => runDelivery(true),
           })
         : await runDelivery();
       delivered = deliveryResults.length > 0;
