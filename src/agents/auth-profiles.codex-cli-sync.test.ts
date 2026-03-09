@@ -3,7 +3,7 @@ import { AUTH_STORE_VERSION, CODEX_CLI_PROFILE_ID } from "./auth-profiles/consta
 import type { AuthProfileStore } from "./auth-profiles/types.js";
 
 const mocks = vi.hoisted(() => ({
-  readCodexCliCredentialsCached: vi.fn(),
+  readCodexCliCredentialsCached: vi.fn().mockReturnValue(null),
   readQwenCliCredentialsCached: vi.fn().mockReturnValue(null),
   readMiniMaxCliCredentialsCached: vi.fn().mockReturnValue(null),
 }));
@@ -39,6 +39,7 @@ describe("codex CLI credential sync", () => {
 
     const mutated = syncExternalCliCredentials(store);
 
+    expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
     expect(store.profiles[CODEX_CLI_PROFILE_ID]).toMatchObject({
       type: "oauth",
@@ -58,6 +59,7 @@ describe("codex CLI credential sync", () => {
 
     const mutated = syncExternalCliCredentials(store);
 
+    expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(false);
     expect(store.profiles[CODEX_CLI_PROFILE_ID]).toBeUndefined();
   });
@@ -88,6 +90,7 @@ describe("codex CLI credential sync", () => {
 
     const mutated = syncExternalCliCredentials(store);
 
+    expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
     expect(store.profiles[CODEX_CLI_PROFILE_ID]).toMatchObject({
       access: "fresh-access-token",
@@ -114,7 +117,8 @@ describe("codex CLI credential sync", () => {
 
     const mutated = syncExternalCliCredentials(store);
 
-    // readCodexCliCredentialsCached should not be called because profile is fresh
+    // The freshness guard must prevent the credential reader from being invoked.
+    expect(mocks.readCodexCliCredentialsCached).not.toHaveBeenCalled();
     expect(mutated).toBe(false);
     expect(store.profiles[CODEX_CLI_PROFILE_ID]).toMatchObject({
       access: "existing-access",
@@ -140,6 +144,7 @@ describe("codex CLI credential sync", () => {
 
     const mutated = syncExternalCliCredentials(store);
 
+    expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
     expect(store.profiles[CODEX_CLI_PROFILE_ID]).toMatchObject({
       type: "oauth",
