@@ -4,6 +4,7 @@ import {
   readMiniMaxCliCredentialsCached,
 } from "../cli-credentials.js";
 import {
+  CODEX_CLI_SYNC_PROFILE_ID,
   EXTERNAL_CLI_NEAR_EXPIRY_MS,
   EXTERNAL_CLI_SYNC_TTL_MS,
   QWEN_CLI_PROFILE_ID,
@@ -11,20 +12,6 @@ import {
   log,
 } from "./constants.js";
 import type { AuthProfileCredential, AuthProfileStore, OAuthCredential } from "./types.js";
-
-/**
- * Target profile ID for Codex CLI credential sync.
- *
- * We intentionally sync into `openai-codex:default` — the same slot that
- * `openclaw models auth login --provider openai-codex` writes to — so that
- * the two auth paths converge on a single, non-deprecated profile.
- *
- * The legacy constant `CODEX_CLI_PROFILE_ID` (`openai-codex:codex-cli`) is
- * treated as deprecated by `maybeRemoveDeprecatedCliAuthProfiles` in
- * `doctor-auth.ts`; syncing into it would cause persistent warning churn on
- * every `openclaw doctor` run.
- */
-const CODEX_CLI_SYNC_PROFILE_ID = "openai-codex:default";
 
 function shallowEqualOAuthCredentials(a: OAuthCredential | undefined, b: OAuthCredential): boolean {
   if (!a) {

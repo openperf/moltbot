@@ -1,12 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AUTH_STORE_VERSION } from "./auth-profiles/constants.js";
+import { AUTH_STORE_VERSION, CODEX_CLI_SYNC_PROFILE_ID } from "./auth-profiles/constants.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
-
-/**
- * The sync target profile ID used by syncExternalCliCredentials for Codex CLI.
- * Must match the CODEX_CLI_SYNC_PROFILE_ID constant in external-cli-sync.ts.
- */
-const CODEX_SYNC_PROFILE_ID = "openai-codex:default";
 
 const mocks = vi.hoisted(() => ({
   readCodexCliCredentialsCached: vi.fn().mockReturnValue(null),
@@ -47,7 +41,7 @@ describe("codex CLI credential sync", () => {
 
     expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toMatchObject({
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toMatchObject({
       type: "oauth",
       provider: "openai-codex",
       access: "codex-access-token",
@@ -67,7 +61,7 @@ describe("codex CLI credential sync", () => {
 
     expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(false);
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toBeUndefined();
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toBeUndefined();
   });
 
   it("updates stale Codex CLI credentials with fresher ones", () => {
@@ -84,7 +78,7 @@ describe("codex CLI credential sync", () => {
     const store: AuthProfileStore = {
       version: AUTH_STORE_VERSION,
       profiles: {
-        [CODEX_SYNC_PROFILE_ID]: {
+        [CODEX_CLI_SYNC_PROFILE_ID]: {
           type: "oauth",
           provider: "openai-codex",
           access: "stale-access-token",
@@ -98,7 +92,7 @@ describe("codex CLI credential sync", () => {
 
     expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toMatchObject({
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toMatchObject({
       access: "fresh-access-token",
       refresh: "fresh-refresh-token",
     });
@@ -117,7 +111,7 @@ describe("codex CLI credential sync", () => {
     const store: AuthProfileStore = {
       version: AUTH_STORE_VERSION,
       profiles: {
-        [CODEX_SYNC_PROFILE_ID]: existingCreds,
+        [CODEX_CLI_SYNC_PROFILE_ID]: existingCreds,
       },
     };
 
@@ -126,7 +120,7 @@ describe("codex CLI credential sync", () => {
     // The freshness guard must prevent the credential reader from being invoked.
     expect(mocks.readCodexCliCredentialsCached).not.toHaveBeenCalled();
     expect(mutated).toBe(false);
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toMatchObject({
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toMatchObject({
       access: "existing-access",
     });
   });
@@ -152,7 +146,7 @@ describe("codex CLI credential sync", () => {
 
     expect(mocks.readCodexCliCredentialsCached).toHaveBeenCalled();
     expect(mutated).toBe(true);
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toMatchObject({
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toMatchObject({
       type: "oauth",
       provider: "openai-codex",
       access: "codex-access-token",
@@ -180,6 +174,6 @@ describe("codex CLI credential sync", () => {
 
     // Must never touch the deprecated profile ID that doctor-auth removes.
     expect(store.profiles["openai-codex:codex-cli"]).toBeUndefined();
-    expect(store.profiles[CODEX_SYNC_PROFILE_ID]).toBeDefined();
+    expect(store.profiles[CODEX_CLI_SYNC_PROFILE_ID]).toBeDefined();
   });
 });
