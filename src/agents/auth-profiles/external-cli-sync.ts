@@ -1,4 +1,5 @@
 import {
+  readCodexCliCredentialsCached,
   readQwenCliCredentialsCached,
   readMiniMaxCliCredentialsCached,
 } from "../cli-credentials.js";
@@ -10,6 +11,20 @@ import {
   log,
 } from "./constants.js";
 import type { AuthProfileCredential, AuthProfileStore, OAuthCredential } from "./types.js";
+
+/**
+ * Target profile ID for Codex CLI credential sync.
+ *
+ * We intentionally sync into `openai-codex:default` — the same slot that
+ * `openclaw models auth login --provider openai-codex` writes to — so that
+ * the two auth paths converge on a single, non-deprecated profile.
+ *
+ * The legacy constant `CODEX_CLI_PROFILE_ID` (`openai-codex:codex-cli`) is
+ * treated as deprecated by `maybeRemoveDeprecatedCliAuthProfiles` in
+ * `doctor-auth.ts`; syncing into it would cause persistent warning churn on
+ * every `openclaw doctor` run.
+ */
+const CODEX_CLI_SYNC_PROFILE_ID = "openai-codex:default";
 
 function shallowEqualOAuthCredentials(a: OAuthCredential | undefined, b: OAuthCredential): boolean {
   if (!a) {
@@ -30,6 +45,8 @@ function shallowEqualOAuthCredentials(a: OAuthCredential | undefined, b: OAuthCr
   );
 }
 
+const EXTERNAL_CLI_PROVIDERS = new Set(["qwen-portal", "minimax-portal", "openai-codex"]);
+
 function isExternalProfileFresh(cred: AuthProfileCredential | undefined, now: number): boolean {
   if (!cred) {
     return false;
@@ -37,7 +54,7 @@ function isExternalProfileFresh(cred: AuthProfileCredential | undefined, now: nu
   if (cred.type !== "oauth" && cred.type !== "token") {
     return false;
   }
-  if (cred.provider !== "qwen-portal" && cred.provider !== "minimax-portal") {
+  if (!EXTERNAL_CLI_PROVIDERS.has(cred.provider)) {
     return false;
   }
   if (typeof cred.expires !== "number") {
@@ -82,13 +99,28 @@ function syncExternalCliCredentialsForProvider(
 }
 
 /**
- * Sync OAuth credentials from external CLI tools (Qwen Code CLI, MiniMax CLI) into the store.
+ * Sync OAuth credentials from external CLI tools (Codex CLI, Qwen Code CLI,
+ * MiniMax CLI) into the store.
  *
  * Returns true if any credentials were updated.
  */
 export function syncExternalCliCredentials(store: AuthProfileStore): boolean {
   let mutated = false;
   const now = Date.now();
+
+  // Sync from Codex CLI (keychain / ~/.codex/auth.json)
+  // Target: openai-codex:default (not the deprecated openai-codex:codex-cli)
+  if (
+    syncExternalCliCredentialsForProvider(
+      store,
+      CODEX_CLI_SYNC_PROFILE_ID,
+      "openai-codex",
+      () => readCodexCliCredentialsCached({ ttlMs: EXTERNAL_CLI_SYNC_TTL_MS }),
+      now,
+    )
+  ) {
+    mutated = true;
+  }
 
   // Sync from Qwen Code CLI
   const existingQwen = store.profiles[QWEN_CLI_PROFILE_ID];
