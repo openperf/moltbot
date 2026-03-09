@@ -118,11 +118,10 @@ describe("runCronIsolatedAgentTurn cron announce target passthrough", () => {
     // When delivery target resolution fails, the agent should not receive
     // a messageTo so it does not attempt to send to an invalid target.
     // The run may still proceed (bestEffort) or fail early depending on config.
-    if (runEmbeddedPiAgentMock.mock.calls.length > 0) {
-      const callArgs = runEmbeddedPiAgentMock.mock.calls[0]?.[0];
-      expect(callArgs?.messageTo).toBeUndefined();
-      expect(callArgs?.messageThreadId).toBeUndefined();
-    }
+    expect(runEmbeddedPiAgentMock).toHaveBeenCalledTimes(1);
+    const callArgs = runEmbeddedPiAgentMock.mock.calls[0]?.[0];
+    expect(callArgs?.messageTo).toBeUndefined();
+    expect(callArgs?.messageThreadId).toBeUndefined();
   });
 
   it("passes messageTo for non-feishu channels (telegram)", async () => {
