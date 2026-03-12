@@ -39,9 +39,18 @@ const MAX_TIMER_DELAY_MS = 60_000;
 const MIN_REFIRE_GAP_MS = 2_000;
 
 const DEFAULT_MISSED_JOB_STAGGER_MS = 5_000;
+const MAX_STAGGER_MS = 10 * 60_000; // 10 minutes — upper bound for stagger interval
 const DEFAULT_MAX_MISSED_JOBS_PER_RESTART = 5;
 const DEFAULT_FAILURE_ALERT_AFTER = 2;
 const DEFAULT_FAILURE_ALERT_COOLDOWN_MS = 60 * 60_000; // 1 hour
+
+/** Validate and clamp missedJobStaggerMs to a safe finite range (CWE-20). */
+function sanitizeStaggerMs(raw: number | undefined): number {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.min(MAX_STAGGER_MS, Math.max(0, Math.floor(raw)));
+  }
+  return DEFAULT_MISSED_JOB_STAGGER_MS;
+}
 
 type TimedCronRunOutcome = CronRunOutcome &
   CronRunTelemetry & {
@@ -891,6 +900,17 @@ async function planStartupCatchup(
     const startupCandidates = sorted.slice(0, maxImmediate);
     const deferred = sorted.slice(maxImmediate);
     if (deferred.length > 0) {
+      // Pre-assign stagger times to deferred jobs NOW, before the lock is
+      // released and the timer can fire.  This moves their nextRunAtMs into
+      // the future so that onTimer / collectRunnableJobs will not pick them
+      // up during the catch-up window, preventing the thundering-herd
+      // scenario that the deferred queue is designed to avoid (#42883).
+      const staggerMs = sanitizeStaggerMs(state.deps.missedJobStaggerMs);
+      let offset = staggerMs;
+      for (const job of deferred) {
+        job.state.nextRunAtMs = now + offset;
+        offset += staggerMs;
+      }
       state.deps.log.info(
         {
           immediateCount: startupCandidates.length,
@@ -969,7 +989,7 @@ async function applyStartupCatchupOutcomes(
   plan: StartupCatchupPlan,
   outcomes: TimedCronRunOutcome[],
 ): Promise<void> {
-  const staggerMs = Math.max(0, state.deps.missedJobStaggerMs ?? DEFAULT_MISSED_JOB_STAGGER_MS);
+  const staggerMs = sanitizeStaggerMs(state.deps.missedJobStaggerMs);
   await locked(state, async () => {
     await ensureLoaded(state, { forceReload: true, skipRecompute: true });
     if (!state.store) {
@@ -981,6 +1001,11 @@ async function applyStartupCatchupOutcomes(
     }
 
     if (plan.deferredJobIds.length > 0) {
+      // Deferred jobs already received preliminary stagger times in
+      // planStartupCatchup (to shield them from onTimer during catch-up).
+      // Now that catch-up is complete, refresh those times relative to the
+      // current wall-clock so the stagger intervals start from "now" rather
+      // than from the (potentially stale) plan-creation timestamp.
       const baseNow = state.deps.nowMs();
       let offset = staggerMs;
       for (const jobId of plan.deferredJobIds) {
@@ -989,9 +1014,9 @@ async function applyStartupCatchupOutcomes(
           continue;
         }
         // If the regular timer already executed this deferred job while
-        // catch-up was running, its lastRunAtMs will be recent.  Do not
-        // overwrite its nextRunAtMs with a stagger value — that would
-        // pull it back to a near-term time and cause a duplicate run.
+        // catch-up was running (e.g. its preliminary stagger time elapsed),
+        // its lastRunAtMs will be recent.  Do not overwrite its nextRunAtMs
+        // with a new stagger value — that would cause a duplicate run.
         // Compare against plan creation time, not current time (#42883).
         if (
           typeof job.state.lastRunAtMs === "number" &&
