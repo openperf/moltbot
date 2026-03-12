@@ -113,9 +113,16 @@ export async function start(state: CronServiceState) {
         // nextRunAtMs so the timer schedules them for the next regular
         // period instead of treating the stale past-due value as
         // immediately runnable (#42883).
-        const next = computeJobNextRunAtMs(job, now);
-        if (typeof next === "number") {
-          job.state.nextRunAtMs = next;
+        try {
+          const next = computeJobNextRunAtMs(job, now);
+          if (typeof next === "number") {
+            job.state.nextRunAtMs = next;
+          }
+        } catch (err) {
+          state.deps.log.warn(
+            { jobId: job.id, err: String(err) },
+            "cron: failed to compute next run for interrupted job, skipping advance",
+          );
         }
       }
     }

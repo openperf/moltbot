@@ -58,6 +58,7 @@ type StartupCatchupCandidate = {
 };
 
 type StartupCatchupPlan = {
+  plannedAtMs: number;
   candidates: StartupCatchupCandidate[];
   deferredJobIds: string[];
 };
@@ -851,6 +852,15 @@ export async function runMissedJobs(
 
   const outcomes = await executeStartupCatchupPlan(state, plan);
   await applyStartupCatchupOutcomes(state, plan, outcomes);
+
+  // Re-arm the timer so it picks up the stagger-assigned nextRunAtMs values
+  // written by applyStartupCatchupOutcomes.  Without this, the timer keeps
+  // the pre-catch-up timeout which may be clamped to MAX_TIMER_DELAY_MS
+  // (60s), causing deferred jobs to miss their intended stagger slots and
+  // burst together on the next tick (#42883).
+  if (plan.deferredJobIds.length > 0) {
+    armTimer(state);
+  }
 }
 
 async function planStartupCatchup(
@@ -864,7 +874,7 @@ async function planStartupCatchup(
   return locked(state, async () => {
     await ensureLoaded(state, { skipRecompute: true });
     if (!state.store) {
-      return { candidates: [], deferredJobIds: [] };
+      return { plannedAtMs: 0, candidates: [], deferredJobIds: [] };
     }
 
     const now = state.deps.nowMs();
@@ -874,7 +884,7 @@ async function planStartupCatchup(
       allowCronMissedRunByLastRun: true,
     });
     if (missed.length === 0) {
-      return { candidates: [], deferredJobIds: [] };
+      return { plannedAtMs: now, candidates: [], deferredJobIds: [] };
     }
     const sorted = missed.toSorted(
       (a, b) => (a.state.nextRunAtMs ?? 0) - (b.state.nextRunAtMs ?? 0),
@@ -904,6 +914,7 @@ async function planStartupCatchup(
     await persist(state);
 
     return {
+      plannedAtMs: now,
       candidates: startupCandidates.map((job) => ({ jobId: job.id, job })),
       deferredJobIds: deferred.map((job) => job.id),
     };
@@ -981,9 +992,12 @@ async function applyStartupCatchupOutcomes(
         // If the regular timer already executed this deferred job while
         // catch-up was running, its lastRunAtMs will be recent.  Do not
         // overwrite its nextRunAtMs with a stagger value — that would
-        // pull it back to a near-term time and cause a duplicate run
-        // (#42883).
-        if (typeof job.state.lastRunAtMs === "number" && job.state.lastRunAtMs >= baseNow) {
+        // pull it back to a near-term time and cause a duplicate run.
+        // Compare against plan creation time, not current time (#42883).
+        if (
+          typeof job.state.lastRunAtMs === "number" &&
+          job.state.lastRunAtMs >= plan.plannedAtMs
+        ) {
           continue;
         }
         job.state.nextRunAtMs = baseNow + offset;
