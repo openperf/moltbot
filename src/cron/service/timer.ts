@@ -853,14 +853,13 @@ export async function runMissedJobs(
   const outcomes = await executeStartupCatchupPlan(state, plan);
   await applyStartupCatchupOutcomes(state, plan, outcomes);
 
-  // Re-arm the timer so it picks up the stagger-assigned nextRunAtMs values
-  // written by applyStartupCatchupOutcomes.  Without this, the timer keeps
-  // the pre-catch-up timeout which may be clamped to MAX_TIMER_DELAY_MS
-  // (60s), causing deferred jobs to miss their intended stagger slots and
-  // burst together on the next tick (#42883).
-  if (plan.deferredJobIds.length > 0) {
-    armTimer(state);
-  }
+  // Re-arm the timer so it picks up nextRunAtMs values updated by
+  // applyStartupCatchupOutcomes.  Both deferred-job stagger assignments and
+  // immediate-candidate error-backoff retries can move nextRunAtMs earlier
+  // than the timeout that was armed before catch-up (which may be clamped to
+  // MAX_TIMER_DELAY_MS = 60s).  Without re-arming, those jobs wait on the
+  // stale timeout and either miss their stagger slots or run retries late.
+  armTimer(state);
 }
 
 async function planStartupCatchup(
