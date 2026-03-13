@@ -237,7 +237,7 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.list[].heartbeat.includeReasoning":
     "Per-agent override for heartbeat reasoning delivery; enable to surface the model's chain-of-thought output alongside heartbeat results for that agent. Security note: reasoning content may expose sensitive context; use only on trusted channels.",
   "agents.list[].heartbeat.every":
-    "Per-agent override for heartbeat interval; use shorter intervals for high-priority agents and longer intervals for low-priority ones. To disable heartbeats for a specific agent, define its agents.list entry without a heartbeat block. Caveat: the default agent has fallback behaviour — it runs heartbeats automatically when no agents.list entry has an explicit heartbeat block, regardless of this setting.",
+    'Per-agent override for heartbeat interval; use shorter intervals for high-priority agents and longer intervals for low-priority ones. Set to "0m" to disable heartbeat runs for this agent. Alternatively, omit the heartbeat block entirely from the agent\'s list entry. Caveat: the default agent has fallback behaviour \u2014 it runs heartbeats automatically when no agents.list entry has an explicit heartbeat block.',
   "agents.list[].heartbeat.activeHours":
     "Per-agent override for the active-hours window restricting when heartbeats run.",
   "agents.list[].heartbeat.activeHours.start":
@@ -269,9 +269,9 @@ export const FIELD_HELP: Record<string, string> = {
   "agents.list.*.heartbeat.includeReasoning":
     "Per-agent override for heartbeat reasoning delivery; enable to surface the model's chain-of-thought output alongside heartbeat results for that agent. Security note: reasoning content may expose sensitive context; use only on trusted channels.",
   "agents.defaults.heartbeat.every":
-    'Heartbeat interval as a duration string (e.g. "5m", "1h", "30s"). The default unit is minutes. Note: when no agents.list entry has an explicit heartbeat block, the default agent runs heartbeats automatically at this interval (fallback behavior). To disable heartbeats for the default agent, you must ensure at least one other agents.list entry defines a heartbeat block (so the system recognises explicit heartbeat configuration) while the default agent\'s entry omits it. Default: "30m".',
+    'Heartbeat interval as a duration string (e.g. "5m", "1h", "30s"). The default unit is minutes. Set to "0m" to disable heartbeat runs for this agent (the runtime treats zero or negative intervals as disabled). Note: when no agents.list entry has an explicit heartbeat block, the default agent runs heartbeats automatically at this interval (fallback behavior). Default: "30m".',
   "agents.list.*.heartbeat.every":
-    "Per-agent override for heartbeat interval; use shorter intervals for high-priority agents and longer intervals for low-priority ones. To disable heartbeats for a specific agent, define its agents.list entry without a heartbeat block. Caveat: the default agent has fallback behaviour — it runs heartbeats automatically when no agents.list entry has an explicit heartbeat block, regardless of this setting.",
+    'Per-agent override for heartbeat interval; use shorter intervals for high-priority agents and longer intervals for low-priority ones. Set to "0m" to disable heartbeat runs for this agent. Alternatively, omit the heartbeat block entirely from the agent\'s list entry. Caveat: the default agent has fallback behaviour \u2014 it runs heartbeats automatically when no agents.list entry has an explicit heartbeat block.',
   "agents.defaults.heartbeat.activeHours":
     "Optional active-hours window restricting when heartbeats run. Use this to avoid unnecessary API calls and notifications outside working hours.",
   "agents.list.*.heartbeat.activeHours":
