@@ -325,6 +325,9 @@ export async function dispatchCronDelivery(
         (p) => !isSilentReplyText(p.text, SILENT_REPLY_TOKEN),
       );
       if (payloadsForDelivery.length === 0) {
+        // Mark attempted so the heartbeat timer does not fire a fallback
+        // enqueueSystemEvent with the NO_REPLY sentinel text.
+        deliveryAttempted = true;
         return null;
       }
       if (params.isAborted()) {
