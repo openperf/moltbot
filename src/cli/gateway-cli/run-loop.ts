@@ -35,11 +35,12 @@ export async function runGatewayLoop(params: {
   let shuttingDown = false;
   let restartResolver: (() => void) | null = null;
 
-  // Grace window: ignore SIGTERM during the first seconds after process start
-  // to avoid tearing down a half-initialised server when a CLI process that
+  // Server-readiness guard: ignore SIGTERM before the server is listening to
+  // avoid tearing down a half-initialised server when a CLI process that
   // shares the systemd cgroup exits immediately after connecting.  (#47133)
-  const STARTUP_GRACE_MS = 10_000;
-  const processStartedAt = Date.now();
+  // Once the server is up, every SIGTERM is treated as intentional so that
+  // `systemctl stop` always triggers a graceful drain-and-close sequence.
+  let serverReady = false;
 
   const cleanupSignals = () => {
     process.removeListener("SIGTERM", onSigterm);
@@ -94,6 +95,7 @@ export async function runGatewayLoop(params: {
       return;
     }
     shuttingDown = false;
+    serverReady = false;
     restartResolver?.();
   };
   const handleStopAfterServerClose = async () => {
@@ -182,18 +184,17 @@ export async function runGatewayLoop(params: {
   };
 
   const onSigterm = () => {
-    const uptimeMs = Date.now() - processStartedAt;
-    // During the startup grace window, a SIGTERM is almost certainly a
-    // side-effect of a CLI process exiting from the same cgroup rather than
-    // an intentional service stop.  Log and ignore to prevent the restart
-    // loop described in #47133 / #29827.
-    if (uptimeMs < STARTUP_GRACE_MS && !shuttingDown) {
-      gatewayLog.warn(
-        `signal SIGTERM received ${uptimeMs}ms after start (< ${STARTUP_GRACE_MS}ms grace); ignoring spurious signal`,
-      );
+    // Before the server is listening, no CLI client can have connected yet, so
+    // a SIGTERM at this point is almost certainly a side-effect of a CLI
+    // process exiting from the same systemd cgroup rather than an intentional
+    // service stop.  Ignore it to break the restart loop described in
+    // #47133 / #29827.  Once the server is ready we always honour the signal
+    // so that `systemctl stop` triggers a full graceful shutdown.
+    if (!serverReady && !shuttingDown) {
+      gatewayLog.warn("signal SIGTERM received before server is ready; ignoring spurious signal");
       return;
     }
-    gatewayLog.info(`signal SIGTERM received (uptime ${uptimeMs}ms)`);
+    gatewayLog.info("signal SIGTERM received");
     request("stop", "SIGTERM");
   };
   const onSigint = () => {
@@ -236,6 +237,7 @@ export async function runGatewayLoop(params: {
       onIteration();
       try {
         server = await params.start();
+        serverReady = true;
         isFirstStart = false;
       } catch (err) {
         // On initial startup, let the error propagate so the outer handler
@@ -246,6 +248,7 @@ export async function runGatewayLoop(params: {
           throw err;
         }
         server = null;
+        serverReady = false;
         // Release the gateway lock so that `daemon restart/stop` (which
         // discovers PIDs via the gateway port) can still manage the process.
         // Without this, the process holds the lock but is not listening,
