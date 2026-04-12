@@ -75,6 +75,38 @@ describe("whatsappOutbound sendPayload", () => {
     });
   });
 
+  it("forwards mediaAccess to sendMessageWhatsApp for media sends", async () => {
+    const sendWhatsApp = vi.fn(async () => ({ messageId: "wa-1", toJid: "jid" }));
+    const readFile = vi.fn(async () => Buffer.from("fake"));
+    const mediaAccess = {
+      localRoots: ["/home/user/media"] as readonly string[],
+      readFile,
+      workspaceDir: "/home/user/workspace",
+    };
+
+    await whatsappOutbound.sendMedia!({
+      cfg: {},
+      to: "5511999999999@c.us",
+      text: "caption",
+      mediaUrl: "photo.png",
+      mediaAccess,
+      mediaLocalRoots: ["/home/user/media"],
+      mediaReadFile: readFile,
+      deps: { sendWhatsApp },
+    });
+
+    expect(sendWhatsApp).toHaveBeenCalledWith("5511999999999@c.us", "caption", {
+      verbose: false,
+      cfg: {},
+      mediaUrl: "photo.png",
+      mediaAccess,
+      mediaLocalRoots: ["/home/user/media"],
+      mediaReadFile: readFile,
+      accountId: undefined,
+      gifPlayback: undefined,
+    });
+  });
+
   it("skips whitespace-only text payloads", async () => {
     const sendWhatsApp = vi.fn();
 
