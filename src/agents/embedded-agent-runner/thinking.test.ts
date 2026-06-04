@@ -1005,7 +1005,7 @@ describe("stripStaleThinkingSignaturesForCompactionReplay", () => {
       }),
     ];
     const result = stripStaleThinkingSignaturesForCompactionReplay(messages);
-    // mid (timestamp 1500 <= 2000): signature stripped
+    // mid (timestamp 1500 < 2000): signature stripped
     const mid = result[1] as AssistantMessage;
     expect(mid.content).toEqual([{ type: "thinking", thinking: "mid" }]);
     // after (timestamp 3000 > 2000): signature kept
@@ -1013,5 +1013,24 @@ describe("stripStaleThinkingSignaturesForCompactionReplay", () => {
     expect((after.content[0] as unknown as Record<string, unknown>).thinkingSignature).toBe(
       "sig_after",
     );
+  });
+
+  it("preserves signatures on assistant messages at exactly the compaction timestamp", () => {
+    const messages: AgentMessage[] = [
+      castAgentMessage({
+        role: "compactionSummary",
+        summary: "s",
+        tokensBefore: 0,
+        timestamp: 2000,
+      }),
+      castAgentMessage({
+        role: "assistant",
+        content: [{ type: "thinking", thinking: "exact", thinkingSignature: "exact_sig" }],
+        timestamp: 2000,
+      }),
+    ];
+    const result = stripStaleThinkingSignaturesForCompactionReplay(messages);
+    // Same millisecond as compaction: treated as post-compaction; signature preserved
+    expect(result).toBe(messages);
   });
 });

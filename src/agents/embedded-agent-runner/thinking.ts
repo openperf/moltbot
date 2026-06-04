@@ -167,9 +167,10 @@ export function stripThinkingSignaturesFromMessage(message: AgentMessage): Agent
  * catches absent/blank signatures; this function catches contextually stale ones identified
  * by timestamp comparison with the latest compaction summary.
  *
- * Only strips from assistant messages whose timestamp is at or before the latest
- * compaction summary timestamp. Post-compaction assistant turns retain their signatures
- * (generated in the new context). Messages with no parseable timestamp are left unchanged.
+ * Only strips from assistant messages whose timestamp is strictly before the latest
+ * compaction summary timestamp. Messages at or after that timestamp may have been generated
+ * in the new context and retain their signatures. Messages with no parseable timestamp are
+ * left unchanged.
  *
  * Returns the original array reference when nothing was changed.
  */
@@ -198,7 +199,7 @@ export function stripStaleThinkingSignaturesForCompactionReplay(
       continue;
     }
     const ts = parseTimestampMs((message as { timestamp?: unknown }).timestamp);
-    if (ts === null || ts > latestCompactionTimestamp) {
+    if (ts === null || ts >= latestCompactionTimestamp) {
       out.push(message);
       continue;
     }
