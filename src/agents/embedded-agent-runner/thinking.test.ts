@@ -1010,6 +1010,8 @@ describe("stripStaleThinkingSignaturesForCompactionReplay", () => {
     expect(mid.content).toEqual([{ type: "thinking", thinking: "mid" }]);
     // after (timestamp 3000 > 2000): signature kept
     const after = result[3] as AssistantMessage;
-    expect((after.content[0] as Record<string, unknown>).thinkingSignature).toBe("sig_after");
+    expect((after.content[0] as unknown as Record<string, unknown>).thinkingSignature).toBe(
+      "sig_after",
+    );
   });
 });
